@@ -4,6 +4,7 @@ import os
 
 from PySide6.QtCore import *
 from PySide6.QtGui import *
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import *
 
 VALID_FORMATS = (
@@ -196,6 +197,14 @@ class NandeViewer(QGraphicsView):
                 Qt.AlignmentFlag.AlignRight,
                 text,
             )
+
+    def use_opengl(self, confirm=True):
+        if confirm:
+            widget = QOpenGLWidget()
+        else:
+            widget = QWidget()
+
+        self.setViewport(widget)
 
     def set_grid_size(self, grid_size: int):
         self._scene._grid_size = grid_size

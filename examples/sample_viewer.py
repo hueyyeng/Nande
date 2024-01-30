@@ -32,8 +32,9 @@ class PopupItem(QGraphicsRectItem):
 
 class Window(QWidget):
     def __init__(self):
-        super(Window, self).__init__()
+        super().__init__()
         self.viewer = NandeViewer(self)
+        self.viewer.use_opengl(True)
         self.viewer.img_clicked.connect(self.show_popup_info)
 
         self.load_img_btn = QToolButton(self)
