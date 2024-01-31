@@ -23,6 +23,152 @@ ZOOM_MIN = -0.95
 ZOOM_MAX = 2.0
 
 
+class NandeViewToolbar(QWidget):
+    def __init__(self, parent: NandeViewer):
+        super().__init__(parent)
+        self.parent_ = parent
+        layout = QHBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.fit_view_btn = QPushButton("Fit to View")
+        self.fit_view_btn.clicked.connect(self.parent_.fit_scene_to_image)
+
+        self.zoom_actual_btn = QPushButton("Zoom Actual")
+        self.zoom_actual_btn.clicked.connect(self.parent_.reset_scene_zoom)
+        self.zoom_half_btn = QPushButton("Zoom 50%")
+        self.zoom_100_btn = QPushButton("Zoom 100%")
+        self.zoom_200_btn = QPushButton("Zoom 200%")
+
+        self.rotate_90cw_btn = QPushButton("Rotate 90 Clockwise")
+        self.rotate_90cw_btn.clicked.connect(lambda: self.parent_.rotate(90))
+        self.rotate_90ccw_btn = QPushButton("Rotate 90 Counter Clockwise")
+        self.rotate_90ccw_btn.clicked.connect(lambda: self.parent_.rotate(-90))
+        self.rotate_180_btn = QPushButton("Rotate 180")
+        self.rotate_180_btn.clicked.connect(lambda: self.parent_.rotate(180))
+
+        self.flip_btn = QPushButton("Flip")
+        self.flip_btn.clicked.connect(self.parent_.flip_image)
+        self.flop_btn = QPushButton("Flop")
+        self.flop_btn.clicked.connect(self.parent_.flop_image)
+
+        layout.addWidget(self.fit_view_btn)
+        layout.addWidget(self.zoom_actual_btn)
+        layout.addWidget(self.zoom_half_btn)
+        layout.addWidget(self.rotate_90cw_btn)
+        layout.addWidget(self.rotate_90ccw_btn)
+        layout.addWidget(self.rotate_180_btn)
+        layout.addWidget(self.flip_btn)
+        layout.addWidget(self.flop_btn)
+
+
+class NandeSettingsToolbar(QWidget):
+    def __init__(self, parent: NandeViewer):
+        super().__init__(parent)
+        self.parent_ = parent
+        layout = QHBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.load_img_btn = QToolButton(self)
+        self.load_img_btn.setText('Load image')
+        self.load_img_btn.clicked.connect(self.load_image)
+
+        self.grid_spacing_spinbox = QSpinBox()
+        self.grid_spacing_spinbox.valueChanged.connect(self.parent_.set_grid_size)
+        self.grid_spacing_spinbox.setValue(32)
+        self.grid_spacing_spinbox.setMinimum(1)
+        self.grid_spacing_spinbox.setMaximum(1024)
+
+        self.grid_divider_spinbox = QSpinBox()
+        self.grid_divider_spinbox.valueChanged.connect(self.parent_.set_grid_divider)
+        self.grid_divider_spinbox.setValue(1)
+        self.grid_divider_spinbox.setMinimum(1)
+        self.grid_divider_spinbox.setMaximum(50)
+
+        self.grid_linewidth_spinbox = QSpinBox()
+        self.grid_linewidth_spinbox.valueChanged.connect(self.parent_.set_grid_linewidth)
+        self.grid_linewidth_spinbox.setValue(1)
+        self.grid_linewidth_spinbox.setMinimum(1)
+        self.grid_linewidth_spinbox.setMaximum(32)
+
+        self.grid_mode_combobox = QComboBox()
+        self.grid_mode_combobox.addItem("None", self.parent_._scene.GRID_DISPLAY_NONE)
+        self.grid_mode_combobox.addItem("Dots", self.parent_._scene.GRID_DISPLAY_DOTS)
+        self.grid_mode_combobox.addItem("Lines", self.parent_._scene.GRID_DISPLAY_LINES)
+        self.grid_mode_combobox.setCurrentIndex(0)
+        self.grid_mode_combobox.currentIndexChanged.connect(self.parent_.set_grid_mode)
+
+        self.bg_color_toolbtn = QToolButton()
+        self.bg_color_toolbtn.setFixedSize(20, 20)
+        self.bg_color_toolbtn.setStyleSheet(
+            f"background-color: {self.parent_.get_bg_color().name()}"
+        )
+        self.bg_color_toolbtn.clicked.connect(self.set_bg_color)
+
+        self.grid_color_toolbtn = QToolButton()
+        self.grid_color_toolbtn.setFixedSize(20, 20)
+        self.grid_color_toolbtn.setStyleSheet(
+            f"background-color: {self.parent_.get_grid_color().name()}"
+        )
+        self.grid_color_toolbtn.clicked.connect(self.set_grid_color)
+
+        self.grid_divider_color_toolbtn = QToolButton()
+        self.grid_divider_color_toolbtn.setFixedSize(20, 20)
+        self.grid_divider_color_toolbtn.setStyleSheet(
+            f"background-color: {self.parent_.get_grid_divider_color().name()}"
+        )
+        self.grid_divider_color_toolbtn.clicked.connect(self.set_grid_divider_color)
+
+        layout.addWidget(self.load_img_btn)
+        layout.addWidget(QLabel("BG Color:"))
+        layout.addWidget(self.bg_color_toolbtn)
+        layout.addWidget(QLabel("Grid Color:"))
+        layout.addWidget(self.grid_color_toolbtn)
+        layout.addWidget(QLabel("Grid Divider Color:"))
+        layout.addWidget(self.grid_divider_color_toolbtn)
+        layout.addWidget(QLabel("Grid Mode:"))
+        layout.addWidget(self.grid_mode_combobox)
+        layout.addWidget(QLabel("Grid Spacing:"))
+        layout.addWidget(self.grid_spacing_spinbox)
+        layout.addWidget(QLabel("Grid Divider:"))
+        layout.addWidget(self.grid_divider_spinbox)
+        layout.addWidget(QLabel("Grid Line Width:"))
+        layout.addWidget(self.grid_linewidth_spinbox)
+
+    def set_bg_color(self):
+        color: QColor = QColorDialog.getColor(self.parent_.get_bg_color().rgba())
+        if color.isValid():
+            self.bg_color_toolbtn.setStyleSheet(f"background-color: {color.name()};")
+            self.parent_.set_bg_color(color)
+
+    def set_grid_color(self):
+        color: QColor = QColorDialog.getColor(self.parent_.get_grid_color().rgba())
+        if color.isValid():
+            self.grid_color_toolbtn.setStyleSheet(f"background-color: {color.name()};")
+            self.parent_.set_grid_color(color)
+
+    def set_grid_divider_color(self):
+        color: QColor = QColorDialog.getColor(self.parent_.get_grid_divider_color().rgba())
+        if color.isValid():
+            self.grid_divider_color_toolbtn.setStyleSheet(f"background-color: {color.name()};")
+            self.parent_.set_grid_divider_color(color)
+
+    def load_image(self):
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(file_dialog.FileMode.ExistingFile)
+
+        if not file_dialog.exec():
+            return
+
+        selected_files = file_dialog.selectedFiles()
+        if not selected_files:
+            return
+
+        file_path = os.path.normpath(selected_files[0])
+        self.setWindowTitle(file_path)
+        self.parent_.set_pixmap(QPixmap(file_path))
+        self.parent_.fit_scene_to_image()
+
+
 class NandeScene(QGraphicsScene):
     GRID_DISPLAY_NONE = 0
     GRID_DISPLAY_DOTS = 1
