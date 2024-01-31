@@ -143,10 +143,12 @@ class NandeViewer(QGraphicsView):
         super().__init__(parent)
         self.parent_ = parent
 
-        self.LMB_state = False
-        self.RMB_state = False
-        self.MMB_state = False
+        self.LMB_state: bool = False
+        self.RMB_state: bool = False
+        self.MMB_state: bool = False
 
+        self._is_flip: bool = False
+        self._is_flop: bool = False
         self._pixmap_item = QGraphicsPixmapItem()
         self._scene = NandeScene(self)
         self._scene.addItem(self._pixmap_item)
@@ -295,6 +297,8 @@ class NandeViewer(QGraphicsView):
             _, ext = os.path.splitext(file_path)
             if ext.lower() in VALID_FORMATS:
                 self.parent_.setWindowTitle(file_path)
+                self._is_flip = False
+                self._is_flop = False
                 self._pixmap_item.setPixmap(QPixmap(file_path))
                 self.fit_scene_to_image()
 
@@ -448,6 +452,24 @@ class NandeViewer(QGraphicsView):
         self._scene_range.setWidth(self._pixmap_item.pixmap().width())
         self._scene_range.setHeight(self._pixmap_item.pixmap().height())
         self._fit_scene_in_view()
+
+    def flip_image(self):
+        self._is_flip = not self._is_flip
+
+        scale = (1, -1)
+        pixmap_item = self.get_pixmap_item()
+        pixmap = pixmap_item.pixmap()
+        transform = QTransform.fromScale(*scale)
+        pixmap_item.setPixmap(pixmap.transformed(transform))
+
+    def flop_image(self):
+        self._is_flop = not self._is_flop
+
+        scale = (-1, 1)
+        pixmap_item = self.get_pixmap_item()
+        pixmap = pixmap_item.pixmap()
+        transform = QTransform.fromScale(*scale)
+        pixmap_item.setPixmap(pixmap.transformed(transform))
 
     def reset_scene_zoom(self):
         # FIXME: Figure out wrong offset when panning right after reset_scene_zoom

@@ -60,6 +60,12 @@ class Window(QWidget):
         self.rotate_180_btn = QPushButton("Rotate 180")
         self.rotate_180_btn.clicked.connect(lambda: self.viewer.rotate(180))
 
+        self.flip_btn = QPushButton("Flip")
+        self.flip_btn.clicked.connect(self.viewer.flip_image)
+
+        self.flop_btn = QPushButton("Flop")
+        self.flop_btn.clicked.connect(self.viewer.flop_image)
+
         self.grid_spacing_spinbox = QSpinBox()
         self.grid_spacing_spinbox.valueChanged.connect(self.set_viewer_grid_size)
         self.grid_spacing_spinbox.setValue(32)
@@ -116,6 +122,8 @@ class Window(QWidget):
         view_layout.addWidget(self.rotate_90cw_btn)
         view_layout.addWidget(self.rotate_90ccw_btn)
         view_layout.addWidget(self.rotate_180_btn)
+        view_layout.addWidget(self.flip_btn)
+        view_layout.addWidget(self.flop_btn)
 
         settings_layout = QHBoxLayout()
         settings_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
