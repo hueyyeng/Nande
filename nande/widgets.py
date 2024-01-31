@@ -91,9 +91,9 @@ class NandeScene(QGraphicsScene):
         pen.setCosmetic(True)
         painter.setPen(pen)
 
-        [painter.drawPoint(int(x), int(y))
-            for x in range(first_left, right, grid_size)
-            for y in range(first_top, bottom, grid_size)]
+        for x in range(first_left, right, grid_size):
+            for y in range(first_top, bottom, grid_size):
+                painter.drawPoint(int(x), int(y))
 
     def viewer(self) -> NandeViewer | None:
         return self.views()[0] if self.views() else None
@@ -163,6 +163,9 @@ class NandeViewer(QGraphicsView):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAcceptDrops(True)
 
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
         # TODO: Need to study the docs on the update/cache/optimization blah
         # self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         # self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
@@ -183,17 +186,22 @@ class NandeViewer(QGraphicsView):
             x = 10
             y = self.height() - fm_height - 5
 
-            rect = QRectF(
+            text_rect = QRect(
                 x, y,
                 fm_width + 10,
                 fm_height,
             )
+            view_rect = QRect(
+                0, 0,
+                self.viewport().width(), self.viewport().height(),
+            )
 
             viewport_painter = QPainter(self.viewport())
+            viewport_painter.fillRect(view_rect, self.get_bg_color())
             viewport_painter.setFont(font)
             viewport_painter.setPen(pen)
             viewport_painter.drawText(
-                rect,
+                text_rect,
                 Qt.AlignmentFlag.AlignRight,
                 text,
             )
@@ -319,7 +327,7 @@ class NandeViewer(QGraphicsView):
 
         if sensitivity is None:
             scale = 1.001 ** value
-            self.scale(scale, scale, mapped_pos)
+            self.scale_scene(scale, scale, mapped_pos)
             return
 
         if value == 0.0:
@@ -330,16 +338,15 @@ class NandeViewer(QGraphicsView):
         scale = (scale_min + sensitivity) if value < 0.0 else (scale_max - sensitivity)
 
         zoom = self.get_zoom()
-        print(f"{zoom=}, {scale=}")
         if ZOOM_MIN >= zoom and scale == scale_min:
             return
 
         if ZOOM_MAX <= zoom and scale == scale_max:
             return
 
-        self.scale(scale, scale, mapped_pos)
+        self.scale_scene(scale, scale, mapped_pos)
 
-    def scale(self, sx: float, sy: float, pos: QPointF = None):
+    def scale_scene(self, sx: float, sy: float, pos: QPointF = None):
         scales = [sx, sx]
         center = pos or self._scene_range.center()
         w = self._scene_range.width() / scales[0]
@@ -349,7 +356,7 @@ class NandeViewer(QGraphicsView):
             center.y() - (center.y() - self._scene_range.top()) / scales[1],
             w, h
         )
-        self._update_scene()
+        self._fit_scene_in_view()
 
     def get_zoom(self) -> float:
         """
@@ -361,12 +368,13 @@ class NandeViewer(QGraphicsView):
             Zoom level
 
         """
-        transform = self.transform()
-        cur_scale = (transform.m11(), transform.m22())
-        return float("{:0.2f}".format(cur_scale[0] - 1.0))
+        transform: QTransform = self.transform()
+        current_scale = (transform.m11(), transform.m22())
+        return float("{:0.2f}".format(current_scale[0] - 1.0))
 
-    def set_zoom(self, zoom: float):
-        self._set_viewer_zoom(zoom, 0.0)
+    def set_zoom(self, zoom_level: float):
+        self.resetTransform()
+        self.scale(zoom_level, zoom_level)
 
     def _toggle_hand_display(self):
         mode = QGraphicsView.DragMode.NoDrag
@@ -425,6 +433,10 @@ class NandeViewer(QGraphicsView):
 
     def _update_scene(self):
         self.setSceneRect(self._scene_range)
+        self._scene.update()
+
+    def _fit_scene_in_view(self):
+        self._update_scene()
         self.fitInView(
             self._scene_range,
             Qt.AspectRatioMode.KeepAspectRatio,
@@ -435,7 +447,7 @@ class NandeViewer(QGraphicsView):
         self._scene_range.setY(0.0)
         self._scene_range.setWidth(self._pixmap_item.pixmap().width())
         self._scene_range.setHeight(self._pixmap_item.pixmap().height())
-        self._update_scene()
+        self._fit_scene_in_view()
 
     def reset_scene_zoom(self):
         # FIXME: Figure out wrong offset when panning right after reset_scene_zoom
@@ -450,5 +462,5 @@ class NandeViewer(QGraphicsView):
             int(self.width() / 2),
             int(self.height() / 2),
         )
-        self.setSceneRect(self._scene_range)
+        self._update_scene()
         self.resetTransform()

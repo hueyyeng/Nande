@@ -3,7 +3,7 @@ name = "Nande"
 description = "PySide6 Image Viewer for Game/VFX workflow"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE.md"}
+license = {file = "LICENSE"}
 keywords = [
     "python",
     "library",

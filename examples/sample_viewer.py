@@ -47,7 +47,18 @@ class Window(QWidget):
         self.zoom_actual_btn = QPushButton("Zoom Actual")
         self.zoom_actual_btn.clicked.connect(self.reset_zoom)
         self.zoom_half_btn = QPushButton("Zoom 50%")
-        self.zoom_half_btn.clicked.connect(lambda: self.set_zoom(1))
+        self.zoom_half_btn.clicked.connect(lambda: self.set_zoom_out(2))
+        self.zoom_100_btn = QPushButton("Zoom 100%")
+        self.zoom_100_btn.clicked.connect(lambda: self.set_zoom_in(0))
+        self.zoom_200_btn = QPushButton("Zoom 200%")
+        self.zoom_200_btn.clicked.connect(lambda: self.set_zoom_in(2))
+
+        self.rotate_90cw_btn = QPushButton("Rotate 90 Clockwise")
+        self.rotate_90cw_btn.clicked.connect(lambda: self.viewer.rotate(90))
+        self.rotate_90ccw_btn = QPushButton("Rotate 90 Counter Clockwise")
+        self.rotate_90ccw_btn.clicked.connect(lambda: self.viewer.rotate(-90))
+        self.rotate_180_btn = QPushButton("Rotate 180")
+        self.rotate_180_btn.clicked.connect(lambda: self.viewer.rotate(180))
 
         self.grid_spacing_spinbox = QSpinBox()
         self.grid_spacing_spinbox.valueChanged.connect(self.set_viewer_grid_size)
@@ -95,14 +106,20 @@ class Window(QWidget):
         )
         self.grid_divider_color_toolbtn.clicked.connect(self.set_grid_divider_color)
 
-        main_layout = QVBoxLayout(self)
-        main_layout.addWidget(self.viewer)
+        view_layout = QHBoxLayout()
+        view_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        view_layout.addWidget(self.fit_view_btn)
+        view_layout.addWidget(self.zoom_actual_btn)
+        view_layout.addWidget(self.zoom_half_btn)
+        view_layout.addWidget(self.zoom_100_btn)
+        view_layout.addWidget(self.zoom_200_btn)
+        view_layout.addWidget(self.rotate_90cw_btn)
+        view_layout.addWidget(self.rotate_90ccw_btn)
+        view_layout.addWidget(self.rotate_180_btn)
+
         settings_layout = QHBoxLayout()
         settings_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         settings_layout.addWidget(self.load_img_btn)
-        settings_layout.addWidget(self.fit_view_btn)
-        settings_layout.addWidget(self.zoom_actual_btn)
-        settings_layout.addWidget(self.zoom_half_btn)
         settings_layout.addWidget(QLabel("BG Color:"))
         settings_layout.addWidget(self.bg_color_toolbtn)
         settings_layout.addWidget(QLabel("Grid Color:"))
@@ -117,6 +134,10 @@ class Window(QWidget):
         settings_layout.addWidget(self.grid_divider_spinbox)
         settings_layout.addWidget(QLabel("Grid Line Width:"))
         settings_layout.addWidget(self.grid_linewidth_spinbox)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.addLayout(view_layout)
+        main_layout.addWidget(self.viewer)
         main_layout.addLayout(settings_layout)
 
         QTimer.singleShot(10, self.fit_image)
@@ -163,11 +184,24 @@ class Window(QWidget):
             self.grid_divider_color_toolbtn.setStyleSheet(f"background-color: {color.name()};")
             self.viewer.set_grid_divider_color(color)
 
-    def set_zoom(self, zoom_level: int):
+    def set_zoom_in(self, zoom_level: int):
+        zoom_mapping = {
+            0: 1.0,
+            1: 1.5,
+            2: 2.0,
+            3: 3.0,
+            4: 4.0,
+        }
+        zoom: float = zoom_mapping.get(zoom_level) or 1.0
+        self.viewer.set_zoom(zoom)
+
+    def set_zoom_out(self, zoom_level: int):
         zoom_mapping = {
             0: 1.0,
             1: 0.75,
             2: 0.5,
+            3: 0.25,
+            4: 0.1,
         }
         zoom: float = zoom_mapping.get(zoom_level) or 1.0
         self.viewer.set_zoom(zoom)
