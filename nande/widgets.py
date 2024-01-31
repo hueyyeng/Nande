@@ -149,6 +149,7 @@ class NandeViewer(QGraphicsView):
 
         self._is_flip: bool = False
         self._is_flop: bool = False
+        self._drag_drop_image_enabled: bool = True
         self._pixmap_item = QGraphicsPixmapItem()
         self._scene = NandeScene(self)
         self._scene.addItem(self._pixmap_item)
@@ -216,6 +217,9 @@ class NandeViewer(QGraphicsView):
 
         self.setViewport(widget)
 
+    def set_drag_drop_image_enabled(self, enable: bool):
+        self._drag_drop_image_enabled = enable
+
     def set_grid_size(self, grid_size: int):
         self._scene._grid_size = grid_size
         self._update_scene()
@@ -266,7 +270,7 @@ class NandeViewer(QGraphicsView):
         return data
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasUrls()and self._drag_drop_image_enabled:
             urls = event.mimeData().urls()
             if len(urls) > 1:
                 self.setCursor(Qt.CursorShape.ForbiddenCursor)
@@ -276,7 +280,7 @@ class NandeViewer(QGraphicsView):
         self.unsetCursor()
 
     def dragMoveEvent(self, event: QDragMoveEvent):
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasUrls() and self._drag_drop_image_enabled:
             urls = event.mimeData().urls()
             if len(urls) > 1:
                 self.setCursor(Qt.CursorShape.ForbiddenCursor)
@@ -286,7 +290,7 @@ class NandeViewer(QGraphicsView):
         self.unsetCursor()
 
     def dropEvent(self, event: QDropEvent):
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasUrls() and self._drag_drop_image_enabled:
             urls = event.mimeData().urls()
             if len(urls) > 1:
                 self.unsetCursor()
