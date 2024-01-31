@@ -313,7 +313,7 @@ class NandeViewer(QGraphicsView):
         delta = delta_x if not delta_y else delta_y
         self._set_viewer_zoom(delta, pos=event.scenePosition().toPoint())
 
-    def set_pixmap(self, pixmap=None):
+    def set_pixmap(self, pixmap: QPixmap = None):
         self._pixmap_item.setPixmap(pixmap)
 
     def _set_viewer_zoom(self, value: float, sensitivity: float = None, pos: QPoint = None):
