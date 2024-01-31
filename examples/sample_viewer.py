@@ -88,7 +88,7 @@ class Window(QWidget):
         self.grid_mode_combobox.addItem("None", self.viewer._scene.GRID_DISPLAY_NONE)
         self.grid_mode_combobox.addItem("Dots", self.viewer._scene.GRID_DISPLAY_DOTS)
         self.grid_mode_combobox.addItem("Lines", self.viewer._scene.GRID_DISPLAY_LINES)
-        self.grid_mode_combobox.setCurrentIndex(2)
+        self.grid_mode_combobox.setCurrentIndex(0)
         self.grid_mode_combobox.currentIndexChanged.connect(self.set_viewer_grid_mode)
 
         self.bg_color_toolbtn = QToolButton()

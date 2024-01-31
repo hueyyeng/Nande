@@ -34,7 +34,7 @@ class NandeScene(QGraphicsScene):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._grid_mode = self.GRID_DISPLAY_LINES
+        self._grid_mode = self.GRID_DISPLAY_NONE
         self._bg_color: QColor = QColor(*self.BG_COLOR)
         self._grid_color: QColor = QColor(*self.GRID_COLOR)
         self._grid_divider_color: QColor = QColor(*self.GRID_DIVIDER_COLOR)
