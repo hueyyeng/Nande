@@ -23,6 +23,36 @@ ZOOM_MIN = -0.95
 ZOOM_MAX = 2.0
 
 
+class NandeImageSlider(QSlider):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setOrientation(Qt.Orientation.Horizontal)
+        self.setMinimum(-100)
+        self.setMaximum(100)
+        self.setValue(0)
+        self.setTickInterval(20)
+        self.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.setSingleStep(20)
+
+
+class NandeImageAdjustmentToolbar(QWidget):
+    def __init__(self, parent: NandeViewer):
+        super().__init__(parent)
+        self.parent_ = parent
+        layout = QHBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.invert_color_btn = QPushButton("Invert Color")
+        self.brightness_slider = NandeImageSlider(self)
+        self.contrast_slider = NandeImageSlider(self)
+
+        layout.addWidget(self.invert_color_btn)
+        layout.addWidget(QLabel("Brightness:"))
+        layout.addWidget(self.brightness_slider)
+        layout.addWidget(QLabel("Contrast:"))
+        layout.addWidget(self.contrast_slider)
+
+
 class NandeViewToolbar(QWidget):
     def __init__(self, parent: NandeViewer):
         super().__init__(parent)

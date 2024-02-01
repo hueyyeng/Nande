@@ -7,7 +7,7 @@ from PySide6.QtWidgets import *
 from nande.widgets import (
     NandeSettingsToolbar,
     NandeViewer,
-    NandeViewToolbar,
+    NandeViewToolbar, NandeImageAdjustmentToolbar,
 )
 
 
@@ -42,9 +42,11 @@ class Window(QWidget):
 
         view_toolbar = NandeViewToolbar(self.viewer)
         settings_toolbar = NandeSettingsToolbar(self.viewer)
+        img_adjustment_toolbar = NandeImageAdjustmentToolbar(self.viewer)
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(view_toolbar)
+        main_layout.addWidget(img_adjustment_toolbar)
         main_layout.addWidget(self.viewer)
         main_layout.addWidget(settings_toolbar)
 
