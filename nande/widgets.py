@@ -72,6 +72,11 @@ class NandeSettingsToolbar(QWidget):
         self.load_img_btn.setText('Load image')
         self.load_img_btn.clicked.connect(self.load_image)
 
+        self.toggle_fps_checkbox = QCheckBox("Show FPS")
+        self.toggle_fps_checkbox.toggled.connect(
+            lambda: self.parent_.toggle_fps_counter(self.toggle_fps_checkbox.isChecked())
+        )
+
         self.grid_spacing_spinbox = QSpinBox()
         self.grid_spacing_spinbox.valueChanged.connect(self.parent_.set_grid_size)
         self.grid_spacing_spinbox.setValue(32)
@@ -119,6 +124,7 @@ class NandeSettingsToolbar(QWidget):
         self.grid_divider_color_toolbtn.clicked.connect(self.set_grid_divider_color)
 
         layout.addWidget(self.load_img_btn)
+        layout.addWidget(self.toggle_fps_checkbox)
         layout.addWidget(QLabel("BG Color:"))
         layout.addWidget(self.bg_color_toolbtn)
         layout.addWidget(QLabel("Grid Color:"))
@@ -284,6 +290,8 @@ class NandeScene(QGraphicsScene):
 
 class NandeViewer(QGraphicsView):
     img_clicked = Signal(QPointF)
+    HUD_FPS_FONT_SIZE = 20
+    HUD_TEXT_FONT_SIZE = 16
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
@@ -295,8 +303,13 @@ class NandeViewer(QGraphicsView):
 
         self._is_flip: bool = False
         self._is_flop: bool = False
+        self._is_panning: bool = False
+        self._is_opengl: bool = False
+        self._show_fps: bool = False
         self._drag_drop_image_enabled: bool = True
+
         self._pixmap_item = QGraphicsPixmapItem()
+
         self._scene = NandeScene(self)
         self._scene.addItem(self._pixmap_item)
         self._scene_range = QRectF(
@@ -320,8 +333,27 @@ class NandeViewer(QGraphicsView):
         # self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
         # self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing)
 
+        # FPS counter
+        self._fps: int = 0
+        self._framerate: int = 0
+        timer = QTimer(
+            self,
+            timeout=self._fps_timeout,
+            interval=1000,
+        )
+        timer.setTimerType(Qt.TimerType.PreciseTimer)
+        timer.start()
+
+    def _fps_timeout(self):
+        self._framerate = self._fps
+        self._fps = 0
+        if not self._is_panning and self._framerate:
+            self._framerate = 0
+            self._update_scene()
+
     def paintEvent(self, event: QPaintEvent):
         super().paintEvent(event)
+        self._fps += 1
 
         if not self._pixmap_item.pixmap():
             text = "No Image"
@@ -355,13 +387,39 @@ class NandeViewer(QGraphicsView):
                 text,
             )
 
+    def drawForeground(self, painter: QPainter, rect: QRect | QRectF, *args, **kwargs):
+        super().drawForeground(painter, rect, *args, **kwargs)
+
+        if not self._show_fps:
+            return
+
+        painter.save()
+        painter.setPen("white")
+        painter.setWorldMatrixEnabled(False)
+
+        font = painter.font()
+        font.setPixelSize(self.HUD_FPS_FONT_SIZE)
+        painter.setFont(font)
+        painter.drawText(0, self.HUD_FPS_FONT_SIZE - (self.HUD_FPS_FONT_SIZE / 10), f"{self._framerate} FPS")
+
+        viewport_mode = "OpenGL" if self._is_opengl else "Raster"
+        font.setPixelSize(self.HUD_TEXT_FONT_SIZE)
+        painter.setFont(font)
+        painter.drawText(0, self.HUD_TEXT_FONT_SIZE * 2.5, viewport_mode)
+        painter.restore()
+
     def use_opengl(self, confirm=True):
         if confirm:
             widget = QOpenGLWidget()
         else:
             widget = QWidget()
 
+        self._is_opengl = confirm
         self.setViewport(widget)
+
+    def toggle_fps_counter(self, toggle: bool):
+        self._show_fps = toggle
+        self._update_scene()
 
     def set_drag_drop_image_enabled(self, enable: bool):
         self._drag_drop_image_enabled = enable
@@ -532,7 +590,9 @@ class NandeViewer(QGraphicsView):
 
     def _toggle_hand_display(self):
         mode = QGraphicsView.DragMode.NoDrag
+        self._is_panning = False
         if self.LMB_state:
+            self._is_panning = True
             mode = QGraphicsView.DragMode.ScrollHandDrag
 
         self.setDragMode(mode)
