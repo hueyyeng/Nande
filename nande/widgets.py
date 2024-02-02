@@ -104,12 +104,12 @@ class NandeSettingsToolbar(QWidget):
 
         self.toggle_fps_checkbox = QCheckBox("Show FPS")
         self.toggle_fps_checkbox.toggled.connect(
-            lambda: self.parent_.toggle_fps_counter(self.toggle_fps_checkbox.isChecked())
+            lambda: self.parent_.show_fps_counter(self.toggle_fps_checkbox.isChecked())
         )
 
         self.toggle_use_tiles = QCheckBox("Use Tiles (requires image reload)")
         self.toggle_use_tiles.toggled.connect(
-            lambda: self.parent_.toggle_use_tiles(self.toggle_use_tiles.isChecked())
+            lambda: self.parent_.use_tiles_mode(self.toggle_use_tiles.isChecked())
         )
 
         self.grid_spacing_spinbox = QSpinBox()
@@ -456,10 +456,10 @@ class NandeViewer(QGraphicsView):
         self._is_opengl = confirm
         self.setViewport(widget)
 
-    def toggle_use_tiles(self, toggle: bool):
+    def use_tiles_mode(self, toggle: bool):
         self._use_tiles = toggle
 
-    def toggle_fps_counter(self, toggle: bool):
+    def show_fps_counter(self, toggle: bool):
         self._show_fps = toggle
         self._update_scene()
 
@@ -753,37 +753,52 @@ class NandeViewer(QGraphicsView):
 
         self._fit_scene_in_view()
 
+    @staticmethod
+    def _flip_transform(rect: QRectF) -> QTransform:
+        center: QPointF = rect.center()
+        pivot_x = center.x()
+        pivot_y = center.y()
+        transform = QTransform()
+        transform.translate(pivot_x, pivot_y)
+        transform.scale(1, -1)
+        transform.translate(-pivot_x, -pivot_y)
+        return transform
+
     def flip_image(self):
         self._is_flip = not self._is_flip
 
-        scale = (1, -1)
-        items: list[QGraphicsPixmapItem] = []
         if self._use_tiles and self._pixmap_tiles:
-            # FIXME: Need to figure out a way to handle tiles scaling anchor/axis/pivot??
-            items = self._pixmap_tiles.childItems()
-        else:
-            items.append(self.get_pixmap_item())
+            rect: QRectF = self._pixmap_tiles.boundingRect()
+            transform = self._flip_transform(rect)
 
-        for item in items:
-            pixmap = item.pixmap()
-            transform = QTransform.fromScale(*scale)
-            item.setPixmap(pixmap.transformed(transform))
+            self._pixmap_tiles.setTransform(transform, combine=True)
+        else:
+            rect: QRectF = self._pixmap_item.boundingRect()
+            transform = self._flip_transform(rect)
+            self._pixmap_item.setTransform(transform, combine=True)
+
+    @staticmethod
+    def _flop_transform(rect: QRectF) -> QTransform:
+        center: QPointF = rect.center()
+        pivot_x = center.x()
+        pivot_y = center.y()
+        transform = QTransform()
+        transform.translate(pivot_x, pivot_y)
+        transform.scale(-1, 1)
+        transform.translate(-pivot_x, -pivot_y)
+        return transform
 
     def flop_image(self):
         self._is_flop = not self._is_flop
 
-        scale = (-1, 1)
-        items: list[QGraphicsPixmapItem] = []
         if self._use_tiles and self._pixmap_tiles:
-            # FIXME: Need to figure out a way to handle tiles scaling anchor/axis/pivot??
-            items = self._pixmap_tiles.childItems()
+            rect: QRectF = self._pixmap_tiles.boundingRect()
+            transform = self._flop_transform(rect)
+            self._pixmap_tiles.setTransform(transform, combine=True)
         else:
-            items.append(self.get_pixmap_item())
-
-        for item in items:
-            pixmap = item.pixmap()
-            transform = QTransform.fromScale(*scale)
-            item.setPixmap(pixmap.transformed(transform))
+            rect: QRectF = self._pixmap_item.boundingRect()
+            transform = self._flop_transform(rect)
+            self._pixmap_item.setTransform(transform, combine=True)
 
     def reset_scene_zoom(self):
         # FIXME: Figure out wrong offset when panning right after reset_scene_zoom
