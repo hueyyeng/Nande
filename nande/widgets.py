@@ -107,6 +107,11 @@ class NandeSettingsToolbar(QWidget):
             lambda: self.parent_.toggle_fps_counter(self.toggle_fps_checkbox.isChecked())
         )
 
+        self.toggle_use_tiles = QCheckBox("Use Tiles (requires image reload)")
+        self.toggle_use_tiles.toggled.connect(
+            lambda: self.parent_.toggle_use_tiles(self.toggle_use_tiles.isChecked())
+        )
+
         self.grid_spacing_spinbox = QSpinBox()
         self.grid_spacing_spinbox.valueChanged.connect(self.parent_.set_grid_size)
         self.grid_spacing_spinbox.setValue(32)
@@ -154,6 +159,7 @@ class NandeSettingsToolbar(QWidget):
         self.grid_divider_color_toolbtn.clicked.connect(self.set_grid_divider_color)
 
         layout.addWidget(self.load_img_btn)
+        layout.addWidget(self.toggle_use_tiles)
         layout.addWidget(self.toggle_fps_checkbox)
         layout.addWidget(QLabel("BG Color:"))
         layout.addWidget(self.bg_color_toolbtn)
@@ -201,8 +207,7 @@ class NandeSettingsToolbar(QWidget):
 
         file_path = os.path.normpath(selected_files[0])
         self.setWindowTitle(file_path)
-        self.parent_.set_pixmap(QPixmap(file_path))
-        self.parent_.fit_scene_to_image()
+        self.parent_.load_image(file_path)
 
 
 class NandeScene(QGraphicsScene):
@@ -336,12 +341,15 @@ class NandeViewer(QGraphicsView):
         self._is_panning: bool = False
         self._is_opengl: bool = False
         self._show_fps: bool = False
+        self._use_tiles: bool = False
         self._drag_drop_image_enabled: bool = True
 
         self._pixmap_item = QGraphicsPixmapItem()
+        self._pixmap_tiles: QGraphicsItemGroup | None = None
 
         self._scene = NandeScene(self)
         self._scene.addItem(self._pixmap_item)
+        self._scene.addItem(self._pixmap_tiles)
         self._scene_range = QRectF(
             0, 0,
             self.size().width(), self.size().height(),
@@ -385,7 +393,8 @@ class NandeViewer(QGraphicsView):
         super().paintEvent(event)
         self._fps += 1
 
-        if not self._pixmap_item.pixmap():
+        valid_tiles = self._use_tiles and self._pixmap_tiles
+        if not self._pixmap_item.pixmap() and not valid_tiles:
             text = "No Image"
             font = QFont("SansSerif", 40, QFont.Weight.Bold)
             pen = QPen(QColor(255, 255, 255, 60), 0.65)
@@ -447,6 +456,9 @@ class NandeViewer(QGraphicsView):
         self._is_opengl = confirm
         self.setViewport(widget)
 
+    def toggle_use_tiles(self, toggle: bool):
+        self._use_tiles = toggle
+
     def toggle_fps_counter(self, toggle: bool):
         self._show_fps = toggle
         self._update_scene()
@@ -495,12 +507,21 @@ class NandeViewer(QGraphicsView):
         return self._pixmap_item
 
     def get_pixmap_info(self) -> dict:
-        pixmap: QPixmap = self._pixmap_item.pixmap()
-        data = {
-            "width": pixmap.width(),
-            "height": pixmap.height(),
-            "depth": pixmap.depth()
-        }
+        if self._use_tiles and self._pixmap_tiles:
+            _: QGraphicsPixmapItem = self._pixmap_tiles.childItems()[0]
+            data = {
+                "width": self._pixmap_tiles.boundingRect().width(),
+                "height": self._pixmap_tiles.boundingRect().height(),
+                "depth": _.pixmap().depth(),
+            }
+        else:
+            pixmap: QPixmap = self._pixmap_item.pixmap()
+            data = {
+                "width": pixmap.width(),
+                "height": pixmap.height(),
+                "depth": pixmap.depth()
+            }
+
         return data
 
     def dragEnterEvent(self, event: QDragEnterEvent):
@@ -537,8 +558,7 @@ class NandeViewer(QGraphicsView):
                 self.parent_.setWindowTitle(file_path)
                 self._is_flip = False
                 self._is_flop = False
-                self._pixmap_item.setPixmap(QPixmap(file_path))
-                self.fit_scene_to_image()
+                self.load_image(file_path)
 
     def wheelEvent(self, event: QWheelEvent):
         event.pixelDelta()
@@ -547,7 +567,38 @@ class NandeViewer(QGraphicsView):
         delta = delta_x if not delta_y else delta_y
         self._set_viewer_zoom(delta, pos=event.scenePosition().toPoint())
 
-    def set_pixmap(self, pixmap: QPixmap = None):
+    def _clear_tiles(self):
+        if not self._pixmap_tiles:
+            return
+
+        for item in self._pixmap_tiles.childItems():
+            self._scene.removeItem(item)
+
+    def load_image(self, file_path: str):
+        # TODO: Use QImageReader to construct pixmap tiles from very high res image
+        # image = QImageReader(file_path)
+        pixmap = QPixmap(file_path)
+        self._clear_tiles()
+        if self._use_tiles:
+            tile_size = QSize(512, 512)
+            tiles = []
+            for y in range(0, pixmap.height(), tile_size.height()):
+                for x in range(0, pixmap.width(), tile_size.width()):
+                    w = min(tile_size.width(), pixmap.width() - x)
+                    h = min(tile_size.height(), pixmap.height() - y)
+
+                    tile = self._scene.addPixmap(pixmap.copy(x, y, w, h))
+                    tile.setPos(x, y)
+                    tiles.append(tile)
+
+            self._pixmap_tiles = self._scene.createItemGroup(tiles)
+
+        else:
+            self._pixmap_item.setPixmap(pixmap)
+
+        self.fit_scene_to_image()
+
+    def set_pixmap(self, pixmap: QPixmap):
         self._pixmap_item.setPixmap(pixmap)
 
     def _set_viewer_zoom(self, value: float, sensitivity: float = None, pos: QPoint = None):
@@ -686,36 +737,66 @@ class NandeViewer(QGraphicsView):
             Qt.AspectRatioMode.KeepAspectRatio,
         )
 
+    def force_update(self):
+        self._update_scene()
+
     def fit_scene_to_image(self):
         self._scene_range.setX(0.0)
         self._scene_range.setY(0.0)
-        self._scene_range.setWidth(self._pixmap_item.pixmap().width())
-        self._scene_range.setHeight(self._pixmap_item.pixmap().height())
+        if self._use_tiles and self._pixmap_tiles:
+            rect: QRectF = self._pixmap_tiles.boundingRect()
+            self._scene_range.setWidth(rect.width())
+            self._scene_range.setHeight(rect.height())
+        else:
+            self._scene_range.setWidth(self._pixmap_item.pixmap().width())
+            self._scene_range.setHeight(self._pixmap_item.pixmap().height())
+
         self._fit_scene_in_view()
 
     def flip_image(self):
         self._is_flip = not self._is_flip
 
         scale = (1, -1)
-        pixmap_item = self.get_pixmap_item()
-        pixmap = pixmap_item.pixmap()
-        transform = QTransform.fromScale(*scale)
-        pixmap_item.setPixmap(pixmap.transformed(transform))
+        items: list[QGraphicsPixmapItem] = []
+        if self._use_tiles and self._pixmap_tiles:
+            # FIXME: Need to figure out a way to handle tiles scaling anchor/axis/pivot??
+            items = self._pixmap_tiles.childItems()
+        else:
+            items.append(self.get_pixmap_item())
+
+        for item in items:
+            pixmap = item.pixmap()
+            transform = QTransform.fromScale(*scale)
+            item.setPixmap(pixmap.transformed(transform))
 
     def flop_image(self):
         self._is_flop = not self._is_flop
 
         scale = (-1, 1)
-        pixmap_item = self.get_pixmap_item()
-        pixmap = pixmap_item.pixmap()
-        transform = QTransform.fromScale(*scale)
-        pixmap_item.setPixmap(pixmap.transformed(transform))
+        items: list[QGraphicsPixmapItem] = []
+        if self._use_tiles and self._pixmap_tiles:
+            # FIXME: Need to figure out a way to handle tiles scaling anchor/axis/pivot??
+            items = self._pixmap_tiles.childItems()
+        else:
+            items.append(self.get_pixmap_item())
+
+        for item in items:
+            pixmap = item.pixmap()
+            transform = QTransform.fromScale(*scale)
+            item.setPixmap(pixmap.transformed(transform))
 
     def reset_scene_zoom(self):
         # FIXME: Figure out wrong offset when panning right after reset_scene_zoom
         #  and resize the window
-        x = - self.size().width() / 2 + (self._pixmap_item.pixmap().width() / 2)
-        y = - self.size().height() / 2 + (self._pixmap_item.pixmap().height() / 2)
+        if self._use_tiles and self._pixmap_tiles:
+            pix_width = self._pixmap_tiles.boundingRect().width()
+            pix_height = self._pixmap_tiles.boundingRect().width()
+        else:
+            pix_width = self._pixmap_item.pixmap().width()
+            pix_height = self._pixmap_item.pixmap().height()
+
+        x = - self.size().width() / 2 + (pix_width / 2)
+        y = - self.size().height() / 2 + (pix_height / 2)
         self._scene_range = QRectF(
             x, y,
             self.size().width(), self.size().height(),
