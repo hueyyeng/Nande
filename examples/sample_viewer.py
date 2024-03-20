@@ -39,6 +39,7 @@ class Window(QWidget):
         self.viewer = NandeViewer(self)
         self.viewer.use_opengl(True)
         self.viewer.img_clicked.connect(self.show_popup_info)
+        self.viewer.window_title_changed.connect(self.setWindowTitle)
 
         view_toolbar = NandeViewToolbar(self.viewer)
         settings_toolbar = NandeSettingsToolbar(self.viewer)

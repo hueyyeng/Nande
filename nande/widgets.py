@@ -214,7 +214,6 @@ class NandeSettingsToolbar(QWidget):
             return
 
         file_path = os.path.normpath(selected_files[0])
-        self.setWindowTitle(file_path)
         self.parent_.load_image(file_path)
 
 
@@ -333,6 +332,8 @@ class NandeScene(QGraphicsScene):
 
 class NandeViewer(QGraphicsView):
     img_clicked = Signal(QPointF)
+    window_title_changed = Signal(str)
+
     HUD_FPS_FONT_SIZE = 20
     HUD_TEXT_FONT_SIZE = 16
 
@@ -344,8 +345,10 @@ class NandeViewer(QGraphicsView):
         self.RMB_state: bool = False
         self.MMB_state: bool = False
 
+        self.current_file_path: str = ""
         self.no_image_text: str = "No Image"
         self.zoom_level: float | None = None
+        self._zoom_factor: float | None = None
 
         self._is_flip: bool = False
         self._is_flop: bool = False
@@ -394,6 +397,9 @@ class NandeViewer(QGraphicsView):
         timer.start()
 
     def _fps_timeout(self):
+        if not self._show_fps:
+            return
+
         self._framerate = self._fps
         self._fps = 0
         if not self._is_panning and self._framerate:
@@ -567,13 +573,12 @@ class NandeViewer(QGraphicsView):
             file_path = os.path.normpath(url.toLocalFile())
             _, ext = os.path.splitext(file_path)
             if ext.lower() in VALID_FORMATS:
-                self.parent_.setWindowTitle(file_path)
+                self.current_file_path = file_path
                 self._is_flip = False
                 self._is_flop = False
                 self.load_image(file_path)
 
     def wheelEvent(self, event: QWheelEvent):
-        event.pixelDelta()
         delta_y = event.angleDelta().y()
         delta_x = event.angleDelta().x()
         delta = delta_x if not delta_y else delta_y
@@ -675,7 +680,28 @@ class NandeViewer(QGraphicsView):
         """
         transform: QTransform = self.transform()
         current_scale = (transform.m11(), transform.m22())
+
         return float("{:0.2f}".format(current_scale[0] - 1.0))
+
+    def get_zoom_factor(self) -> float:
+        transform: QTransform = self.transform()
+        current_scale = transform.m11()
+
+        return current_scale
+
+    def _update_window_title(self):
+        self._zoom_factor = self.get_zoom_factor()
+
+        if not self.current_file_path:
+            title = "NandeViewer"
+        else:
+            zoom_factor = round(self._zoom_factor, 2)
+            zoom_percentage = f"{zoom_factor:.0%}"
+            title = (
+                f"{self.current_file_path} - {zoom_percentage}"
+            )
+
+        self.window_title_changed.emit(title)
 
     def _toggle_hand_display(self):
         mode = QGraphicsView.DragMode.NoDrag
@@ -744,6 +770,7 @@ class NandeViewer(QGraphicsView):
             self._scene_range,
             Qt.AspectRatioMode.KeepAspectRatio,
         )
+        self._update_window_title()
 
     def force_update(self):
         self._update_scene()
@@ -838,11 +865,10 @@ class NandeViewer(QGraphicsView):
         # FIXME: Figure out wrong offset when panning right after reset_scene_zoom
         #  and resize the window
         self._recalculate_scene_zoom()
+        self._update_window_title()
 
     def set_zoom(self, zoom_level: float):
-        if zoom_level == self.zoom_level:
-            return
-
-        self.zoom_level = zoom_level
-        self._recalculate_scene_zoom()
-        self.scale_scene(zoom_level, zoom_level)
+        if not zoom_level == self._zoom_factor:
+            self.zoom_level = zoom_level
+            self._recalculate_scene_zoom()
+            self.scale_scene(zoom_level, zoom_level)
