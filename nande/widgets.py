@@ -23,6 +23,12 @@ ZOOM_MIN = -0.95
 ZOOM_MAX = 2.0
 
 
+class NandeButton(QPushButton):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setAutoDefault(False)
+
+
 class NandeImageSlider(QSlider):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,7 +48,7 @@ class NandeImageAdjustmentToolbar(QWidget):
         layout = QHBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self.invert_color_btn = QPushButton("Invert Color")
+        self.invert_color_btn = NandeButton("Invert Color")
         self.brightness_slider = NandeImageSlider(self)
         self.contrast_slider = NandeImageSlider(self)
 
@@ -60,30 +66,32 @@ class NandeViewToolbar(QWidget):
         layout = QHBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self.fit_view_btn = QPushButton("Fit to View")
+        self.fit_view_btn = NandeButton("Fit to View")
         self.fit_view_btn.clicked.connect(self.parent_.fit_scene_to_image)
 
-        self.zoom_actual_btn = QPushButton("Zoom Actual")
+        self.zoom_actual_btn = NandeButton("Zoom Actual")
         self.zoom_actual_btn.clicked.connect(self.parent_.reset_scene_zoom)
-        self.zoom_half_btn = QPushButton("Zoom 50%")
-        self.zoom_100_btn = QPushButton("Zoom 100%")
-        self.zoom_200_btn = QPushButton("Zoom 200%")
+        self.zoom_half_btn = NandeButton("Zoom 50%")
+        self.zoom_100_btn = NandeButton("Zoom 100%")
+        self.zoom_200_btn = NandeButton("Zoom 200%")
 
-        self.rotate_90cw_btn = QPushButton("Rotate 90 Clockwise")
+        self.rotate_90cw_btn = NandeButton("Rotate 90 Clockwise")
         self.rotate_90cw_btn.clicked.connect(lambda: self.parent_.rotate(90))
-        self.rotate_90ccw_btn = QPushButton("Rotate 90 Counter Clockwise")
+        self.rotate_90ccw_btn = NandeButton("Rotate 90 Counter Clockwise")
         self.rotate_90ccw_btn.clicked.connect(lambda: self.parent_.rotate(-90))
-        self.rotate_180_btn = QPushButton("Rotate 180")
+        self.rotate_180_btn = NandeButton("Rotate 180")
         self.rotate_180_btn.clicked.connect(lambda: self.parent_.rotate(180))
 
-        self.flip_btn = QPushButton("Flip")
+        self.flip_btn = NandeButton("Flip")
         self.flip_btn.clicked.connect(self.parent_.flip_image)
-        self.flop_btn = QPushButton("Flop")
+        self.flop_btn = NandeButton("Flop")
         self.flop_btn.clicked.connect(self.parent_.flop_image)
 
         layout.addWidget(self.fit_view_btn)
         layout.addWidget(self.zoom_actual_btn)
         layout.addWidget(self.zoom_half_btn)
+        layout.addWidget(self.zoom_100_btn)
+        layout.addWidget(self.zoom_200_btn)
         layout.addWidget(self.rotate_90cw_btn)
         layout.addWidget(self.rotate_90ccw_btn)
         layout.addWidget(self.rotate_180_btn)
@@ -336,6 +344,9 @@ class NandeViewer(QGraphicsView):
         self.RMB_state: bool = False
         self.MMB_state: bool = False
 
+        self.no_image_text: str = "No Image"
+        self.zoom_level: float | None = None
+
         self._is_flip: bool = False
         self._is_flop: bool = False
         self._is_panning: bool = False
@@ -390,12 +401,11 @@ class NandeViewer(QGraphicsView):
             self._update_scene()
 
     def paintEvent(self, event: QPaintEvent):
-        super().paintEvent(event)
         self._fps += 1
 
         valid_tiles = self._use_tiles and self._pixmap_tiles
         if not self._pixmap_item.pixmap() and not valid_tiles:
-            text = "No Image"
+            text = self.no_image_text
             font = QFont("SansSerif", 40, QFont.Weight.Bold)
             pen = QPen(QColor(255, 255, 255, 60), 0.65)
 
@@ -425,6 +435,8 @@ class NandeViewer(QGraphicsView):
                 Qt.AlignmentFlag.AlignRight,
                 text,
             )
+        else:
+            super().paintEvent(event)
 
     def drawForeground(self, painter: QPainter, rect: QRect | QRectF, *args, **kwargs):
         super().drawForeground(painter, rect, *args, **kwargs)
@@ -665,10 +677,6 @@ class NandeViewer(QGraphicsView):
         current_scale = (transform.m11(), transform.m22())
         return float("{:0.2f}".format(current_scale[0] - 1.0))
 
-    def set_zoom(self, zoom_level: float):
-        self.resetTransform()
-        self.scale(zoom_level, zoom_level)
-
     def _toggle_hand_display(self):
         mode = QGraphicsView.DragMode.NoDrag
         self._is_panning = False
@@ -741,6 +749,8 @@ class NandeViewer(QGraphicsView):
         self._update_scene()
 
     def fit_scene_to_image(self):
+        self.zoom_level = None
+
         self._scene_range.setX(0.0)
         self._scene_range.setY(0.0)
         if self._use_tiles and self._pixmap_tiles:
@@ -762,6 +772,7 @@ class NandeViewer(QGraphicsView):
         transform.translate(pivot_x, pivot_y)
         transform.scale(1, -1)
         transform.translate(-pivot_x, -pivot_y)
+
         return transform
 
     def flip_image(self):
@@ -786,6 +797,7 @@ class NandeViewer(QGraphicsView):
         transform.translate(pivot_x, pivot_y)
         transform.scale(-1, 1)
         transform.translate(-pivot_x, -pivot_y)
+
         return transform
 
     def flop_image(self):
@@ -800,9 +812,7 @@ class NandeViewer(QGraphicsView):
             transform = self._flop_transform(rect)
             self._pixmap_item.setTransform(transform, combine=True)
 
-    def reset_scene_zoom(self):
-        # FIXME: Figure out wrong offset when panning right after reset_scene_zoom
-        #  and resize the window
+    def _recalculate_scene_zoom(self):
         if self._use_tiles and self._pixmap_tiles:
             pix_width = self._pixmap_tiles.boundingRect().width()
             pix_height = self._pixmap_tiles.boundingRect().width()
@@ -822,3 +832,17 @@ class NandeViewer(QGraphicsView):
         )
         self._update_scene()
         self.resetTransform()
+
+    def reset_scene_zoom(self):
+        self.zoom_level = None
+        # FIXME: Figure out wrong offset when panning right after reset_scene_zoom
+        #  and resize the window
+        self._recalculate_scene_zoom()
+
+    def set_zoom(self, zoom_level: float):
+        if zoom_level == self.zoom_level:
+            return
+
+        self.zoom_level = zoom_level
+        self._recalculate_scene_zoom()
+        self.scale_scene(zoom_level, zoom_level)
