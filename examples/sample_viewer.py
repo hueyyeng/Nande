@@ -16,7 +16,7 @@ class PopupItem(QGraphicsRectItem):
         super().__init__(parent)
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
         self.setRect(0, 0, 100, 50)
-        self.setBrush(Qt.yellow)
+        self.setBrush(Qt.GlobalColor.yellow)
 
         self.text_item = QGraphicsTextItem(message, self)
         # Adjust the position of the text within the popup
@@ -43,6 +43,16 @@ class Window(QWidget):
         view_toolbar = NandeViewToolbar(self.viewer)
         settings_toolbar = NandeSettingsToolbar(self.viewer)
         img_adjustment_toolbar = NandeImageAdjustmentToolbar(self.viewer)
+
+        view_toolbar.zoom_half_btn.clicked.connect(
+            lambda: self.set_zoom_out(2)
+        )
+        view_toolbar.zoom_100_btn.clicked.connect(
+            lambda: self.set_zoom_in(0)
+        )
+        view_toolbar.zoom_200_btn.clicked.connect(
+            lambda: self.set_zoom_in(2)
+        )
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(view_toolbar)
