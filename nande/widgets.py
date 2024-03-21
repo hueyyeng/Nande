@@ -2,10 +2,21 @@ from __future__ import annotations
 
 import os
 
+import cv2
+import numpy
+import numpy as np
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import *
+
+from nande.utils import (
+    ChannelEnum,
+    get_channel,
+    get_invert_color,
+    get_luminance,
+    get_pixmap_from_arrays,
+)
 
 VALID_FORMATS = (
     ".jpg",
@@ -48,15 +59,34 @@ class NandeImageAdjustmentToolbar(QWidget):
         layout = QHBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
+        self.channels_combobox = QComboBox()
+        self.channels_combobox.addItem("Color (RGB)", None)
+        self.channels_combobox.addItem("Red", ChannelEnum.RED)
+        self.channels_combobox.addItem("Green", ChannelEnum.GREEN)
+        self.channels_combobox.addItem("Blue", ChannelEnum.BLUE)
+        self.channels_combobox.addItem("Alpha", ChannelEnum.ALPHA)
+        self.channels_combobox.currentIndexChanged.connect(self._channel_changed)
+
+        self.luminance_btn = NandeButton("Luminance")
+        self.luminance_btn.clicked.connect(self.parent_.view_luminance)
+
         self.invert_color_btn = NandeButton("Invert Color")
+        self.invert_color_btn.clicked.connect(self.parent_.view_invert_color)
+
         self.brightness_slider = NandeImageSlider(self)
         self.contrast_slider = NandeImageSlider(self)
 
+        layout.addWidget(self.channels_combobox)
+        layout.addWidget(self.luminance_btn)
         layout.addWidget(self.invert_color_btn)
         layout.addWidget(QLabel("Brightness:"))
         layout.addWidget(self.brightness_slider)
         layout.addWidget(QLabel("Contrast:"))
         layout.addWidget(self.contrast_slider)
+
+    def _channel_changed(self):
+        channel_idx = self.channels_combobox.currentData()
+        self.parent_.view_channel(channel_idx)
 
 
 class NandeViewToolbar(QWidget):
@@ -360,6 +390,8 @@ class NandeViewer(QGraphicsView):
 
         self._pixmap_item = QGraphicsPixmapItem()
         self._pixmap_tiles: QGraphicsItemGroup | None = None
+        self._original_pixmap: QPixmap = QPixmap()
+        self._original_image: numpy.ndarray = np.zeros((1, 1), dtype=np.uint8)
 
         self._scene = NandeScene(self)
         self._scene.addItem(self._pixmap_item)
@@ -594,7 +626,9 @@ class NandeViewer(QGraphicsView):
     def load_image(self, file_path: str):
         # TODO: Use QImageReader to construct pixmap tiles from very high res image
         # image = QImageReader(file_path)
-        pixmap = QPixmap(file_path)
+        self._original_image = cv2.imread(file_path, flags=cv2.IMREAD_UNCHANGED)
+        pixmap = self._original_pixmap = QPixmap(file_path)
+
         self._clear_tiles()
         if self._use_tiles:
             tile_size = QSize(512, 512)
@@ -616,6 +650,35 @@ class NandeViewer(QGraphicsView):
         self.fit_scene_to_image()
 
     def set_pixmap(self, pixmap: QPixmap):
+        self._original_pixmap = pixmap
+        self._pixmap_item.setPixmap(pixmap)
+
+    def view_channel(self, idx: int | None):
+        if idx is None:
+            self._pixmap_item.setPixmap(self._original_pixmap)
+            return
+
+        ch = get_channel(self._original_image, idx)
+        if ch is None:
+            return
+
+        pixmap = get_pixmap_from_arrays(ch, is_mono=True)
+        self._pixmap_item.setPixmap(pixmap)
+
+    def view_luminance(self):
+        lu = get_luminance(self._original_image)
+        pixmap = get_pixmap_from_arrays(lu, is_mono=True)
+        self._pixmap_item.setPixmap(pixmap)
+
+    def view_invert_color(self):
+        ic = get_invert_color(self._original_image)
+        image_format = QImage.Format.Format_RGB888
+        if len(self._original_image.shape) > 2:
+            _, _, channel = self._original_image.shape
+            if channel > 3:
+                image_format = QImage.Format.Format_RGBA8888_Premultiplied
+
+        pixmap = get_pixmap_from_arrays(ic, image_format=image_format)
         self._pixmap_item.setPixmap(pixmap)
 
     def _set_viewer_zoom(self, value: float, sensitivity: float = None, pos: QPoint = None):
