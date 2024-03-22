@@ -9,6 +9,7 @@ class ChannelEnum:
     GREEN = 1
     BLUE = 2
     ALPHA = 3
+    LUMINANCE = 100
 
 
 def get_pixmap_from_arrays(

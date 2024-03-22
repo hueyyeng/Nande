@@ -65,10 +65,8 @@ class NandeImageAdjustmentToolbar(QWidget):
         self.channels_combobox.addItem("Green", ChannelEnum.GREEN)
         self.channels_combobox.addItem("Blue", ChannelEnum.BLUE)
         self.channels_combobox.addItem("Alpha", ChannelEnum.ALPHA)
+        self.channels_combobox.addItem("Luminance", ChannelEnum.LUMINANCE)
         self.channels_combobox.currentIndexChanged.connect(self._channel_changed)
-
-        self.luminance_btn = NandeButton("Luminance")
-        self.luminance_btn.clicked.connect(self.parent_.view_luminance)
 
         self.invert_color_btn = NandeButton("Invert Color")
         self.invert_color_btn.clicked.connect(self.parent_.view_invert_color)
@@ -77,7 +75,6 @@ class NandeImageAdjustmentToolbar(QWidget):
         self.contrast_slider = NandeImageSlider(self)
 
         layout.addWidget(self.channels_combobox)
-        layout.addWidget(self.luminance_btn)
         layout.addWidget(self.invert_color_btn)
         layout.addWidget(QLabel("Brightness:"))
         layout.addWidget(self.brightness_slider)
@@ -101,9 +98,15 @@ class NandeViewToolbar(QWidget):
 
         self.zoom_actual_btn = NandeButton("Zoom Actual")
         self.zoom_actual_btn.clicked.connect(self.parent_.reset_scene_zoom)
+
         self.zoom_half_btn = NandeButton("Zoom 50%")
+        self.zoom_half_btn.clicked.connect(lambda : self.parent_.set_zoom(0.5))
+
         self.zoom_100_btn = NandeButton("Zoom 100%")
+        self.zoom_100_btn.clicked.connect(lambda: self.parent_.set_zoom(1.0))
+
         self.zoom_200_btn = NandeButton("Zoom 200%")
+        self.zoom_200_btn.clicked.connect(lambda: self.parent_.set_zoom(2.0))
 
         self.rotate_90cw_btn = NandeButton("Rotate 90 Clockwise")
         self.rotate_90cw_btn.clicked.connect(lambda: self.parent_.rotate(90))
@@ -656,6 +659,10 @@ class NandeViewer(QGraphicsView):
     def view_channel(self, idx: int | None):
         if idx is None:
             self._pixmap_item.setPixmap(self._original_pixmap)
+            return
+
+        if idx == ChannelEnum.LUMINANCE:
+            self.view_luminance()
             return
 
         ch = get_channel(self._original_image, idx)
