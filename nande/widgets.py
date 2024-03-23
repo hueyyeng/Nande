@@ -10,12 +10,15 @@ from PySide6.QtGui import *
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import *
 
+from nande import BIT_DEPTH, BitDepth
 from nande.utils import (
     ChannelEnum,
     get_channel,
     get_invert_color,
+    get_invert_linear_color,
     get_luminance,
-    get_pixmap_from_arrays,
+    get_pixmap_from_ndarray,
+    measure_time,
 )
 
 VALID_FORMATS = (
@@ -71,11 +74,15 @@ class NandeImageAdjustmentToolbar(QWidget):
         self.invert_color_btn = NandeButton("Invert Color")
         self.invert_color_btn.clicked.connect(self.parent_.view_invert_color)
 
+        self.invert_linear_color_btn = NandeButton("Invert Linear Color")
+        self.invert_linear_color_btn.clicked.connect(self.parent_.view_invert_linear_color)
+
         self.brightness_slider = NandeImageSlider(self)
         self.contrast_slider = NandeImageSlider(self)
 
         layout.addWidget(self.channels_combobox)
         layout.addWidget(self.invert_color_btn)
+        layout.addWidget(self.invert_linear_color_btn)
         layout.addWidget(QLabel("Brightness:"))
         layout.addWidget(self.brightness_slider)
         layout.addWidget(QLabel("Contrast:"))
@@ -383,6 +390,7 @@ class NandeViewer(QGraphicsView):
         self.zoom_level: float | None = None
         self._zoom_factor: float | None = None
 
+        self._is_inverted: bool = False
         self._is_flip: bool = False
         self._is_flop: bool = False
         self._is_panning: bool = False
@@ -391,14 +399,14 @@ class NandeViewer(QGraphicsView):
         self._use_tiles: bool = False
         self._drag_drop_image_enabled: bool = True
 
-        self._pixmap_item = QGraphicsPixmapItem()
-        self._pixmap_tiles: QGraphicsItemGroup | None = None
-        self._original_pixmap: QPixmap = QPixmap()
-        self._original_image: numpy.ndarray = np.zeros((1, 1), dtype=np.uint8)
+        self._framebuffer_item = QGraphicsPixmapItem()
+        self._framebuffer_tiles: QGraphicsItemGroup | None = None
+        self._original_framebuffer: QPixmap = QPixmap()
+        self._original_image: numpy.ndarray = np.zeros((1, 1), dtype=BIT_DEPTH)
 
         self._scene = NandeScene(self)
-        self._scene.addItem(self._pixmap_item)
-        self._scene.addItem(self._pixmap_tiles)
+        self._scene.addItem(self._framebuffer_item)
+        self._scene.addItem(self._framebuffer_tiles)
         self._scene_range = QRectF(
             0, 0,
             self.size().width(), self.size().height(),
@@ -444,8 +452,8 @@ class NandeViewer(QGraphicsView):
     def paintEvent(self, event: QPaintEvent):
         self._fps += 1
 
-        valid_tiles = self._use_tiles and self._pixmap_tiles
-        if not self._pixmap_item.pixmap() and not valid_tiles:
+        valid_tiles = self._use_tiles and self._framebuffer_tiles
+        if not self._framebuffer_item.pixmap() and not valid_tiles:
             text = self.no_image_text
             font = QFont("SansSerif", 40, QFont.Weight.Bold)
             pen = QPen(QColor(255, 255, 255, 60), 0.65)
@@ -557,18 +565,18 @@ class NandeViewer(QGraphicsView):
         self._update_scene()
 
     def get_pixmap_item(self) -> QGraphicsPixmapItem:
-        return self._pixmap_item
+        return self._framebuffer_item
 
     def get_pixmap_info(self) -> dict:
-        if self._use_tiles and self._pixmap_tiles:
-            _: QGraphicsPixmapItem = self._pixmap_tiles.childItems()[0]
+        if self._use_tiles and self._framebuffer_tiles:
+            _: QGraphicsPixmapItem = self._framebuffer_tiles.childItems()[0]
             data = {
-                "width": self._pixmap_tiles.boundingRect().width(),
-                "height": self._pixmap_tiles.boundingRect().height(),
+                "width": self._framebuffer_tiles.boundingRect().width(),
+                "height": self._framebuffer_tiles.boundingRect().height(),
                 "depth": _.pixmap().depth(),
             }
         else:
-            pixmap: QPixmap = self._pixmap_item.pixmap()
+            pixmap: QPixmap = self._framebuffer_item.pixmap()
             data = {
                 "width": pixmap.width(),
                 "height": pixmap.height(),
@@ -620,17 +628,28 @@ class NandeViewer(QGraphicsView):
         self._set_viewer_zoom(delta, pos=event.scenePosition().toPoint())
 
     def _clear_tiles(self):
-        if not self._pixmap_tiles:
+        if not self._framebuffer_tiles:
             return
 
-        for item in self._pixmap_tiles.childItems():
+        for item in self._framebuffer_tiles.childItems():
             self._scene.removeItem(item)
+
+    def _read_convert_image(self, file_path: str, depth: BIT_DEPTH | None = None):
+        if depth is None:
+            depth = BitDepth.FLOAT
+
+        raw = cv2.imread(file_path, flags=cv2.IMREAD_UNCHANGED)
+        channels = cv2.split(raw)
+        channels = [
+            channel.astype(depth) for channel in channels
+        ]
+        return cv2.merge(channels)
 
     def load_image(self, file_path: str):
         # TODO: Use QImageReader to construct pixmap tiles from very high res image
         # image = QImageReader(file_path)
-        self._original_image = cv2.imread(file_path, flags=cv2.IMREAD_UNCHANGED)
-        pixmap = self._original_pixmap = QPixmap(file_path)
+        self._original_image = self._read_convert_image(file_path)
+        pixmap = self._original_framebuffer = QPixmap(file_path)
 
         self._clear_tiles()
         if self._use_tiles:
@@ -645,48 +664,69 @@ class NandeViewer(QGraphicsView):
                     tile.setPos(x, y)
                     tiles.append(tile)
 
-            self._pixmap_tiles = self._scene.createItemGroup(tiles)
+            self._framebuffer_tiles = self._scene.createItemGroup(tiles)
 
         else:
-            self._pixmap_item.setPixmap(pixmap)
+            self._framebuffer_item.setPixmap(pixmap)
 
         self.fit_scene_to_image()
 
     def set_pixmap(self, pixmap: QPixmap):
-        self._original_pixmap = pixmap
-        self._pixmap_item.setPixmap(pixmap)
+        self._original_framebuffer = pixmap
+        self._framebuffer_item.setPixmap(pixmap)
 
     def view_channel(self, idx: int | None):
         if idx is None:
-            self._pixmap_item.setPixmap(self._original_pixmap)
+            self._framebuffer_item.setPixmap(self._original_framebuffer)
             return
 
         if idx == ChannelEnum.LUMINANCE:
-            self.view_luminance()
+            measure_time(self.view_luminance)
             return
 
-        ch = get_channel(self._original_image, idx)
+        ch = measure_time(get_channel, self._original_image, idx)
         if ch is None:
             return
 
-        pixmap = get_pixmap_from_arrays(ch, is_mono=True)
-        self._pixmap_item.setPixmap(pixmap)
+        pixmap = get_pixmap_from_ndarray(ch, image_format=QImage.Format.Format_RGBA8888)
+        self._framebuffer_item.setPixmap(pixmap)
 
     def view_luminance(self):
         lu = get_luminance(self._original_image)
-        pixmap = get_pixmap_from_arrays(lu, is_mono=True)
-        self._pixmap_item.setPixmap(pixmap)
+        pixmap = get_pixmap_from_ndarray(lu, image_format=QImage.Format.Format_RGBA8888)
+        self._framebuffer_item.setPixmap(pixmap)
 
     def view_invert_color(self):
-        ic = get_invert_color(self._original_image)
+        self._is_inverted = not self._is_inverted
+        if not self._is_inverted:
+            self._framebuffer_item.setPixmap(self._original_framebuffer)
+            return
+
+        ic = measure_time(get_invert_color, self._original_image)
         image_format = QImage.Format.Format_RGB888
         if len(self._original_image.shape) > 2:
-            _, _, channel = self._original_image.shape
-            if channel > 3:
+            _, _, channels = self._original_image.shape
+            if channels > 3:
                 image_format = QImage.Format.Format_RGBA8888_Premultiplied
 
-        pixmap = get_pixmap_from_arrays(ic, image_format=image_format)
-        self._pixmap_item.setPixmap(pixmap)
+        pixmap = get_pixmap_from_ndarray(ic, image_format=image_format)
+        self._framebuffer_item.setPixmap(pixmap)
+
+    def view_invert_linear_color(self):
+        self._is_inverted = not self._is_inverted
+        if not self._is_inverted:
+            self._framebuffer_item.setPixmap(self._original_framebuffer)
+            return
+
+        ic = measure_time(get_invert_linear_color, self._original_image)
+        image_format = QImage.Format.Format_RGB888
+        if len(self._original_image.shape) > 2:
+            _, _, channels = self._original_image.shape
+            if channels > 3:
+                image_format = QImage.Format.Format_RGBA8888_Premultiplied
+
+        pixmap = get_pixmap_from_ndarray(ic, image_format=image_format)
+        self._framebuffer_item.setPixmap(pixmap)
 
     def _set_viewer_zoom(self, value: float, sensitivity: float = None, pos: QPoint = None):
         """
@@ -850,13 +890,13 @@ class NandeViewer(QGraphicsView):
 
         self._scene_range.setX(0.0)
         self._scene_range.setY(0.0)
-        if self._use_tiles and self._pixmap_tiles:
-            rect: QRectF = self._pixmap_tiles.boundingRect()
+        if self._use_tiles and self._framebuffer_tiles:
+            rect: QRectF = self._framebuffer_tiles.boundingRect()
             self._scene_range.setWidth(rect.width())
             self._scene_range.setHeight(rect.height())
         else:
-            self._scene_range.setWidth(self._pixmap_item.pixmap().width())
-            self._scene_range.setHeight(self._pixmap_item.pixmap().height())
+            self._scene_range.setWidth(self._framebuffer_item.pixmap().width())
+            self._scene_range.setHeight(self._framebuffer_item.pixmap().height())
 
         self._fit_scene_in_view()
 
@@ -875,15 +915,15 @@ class NandeViewer(QGraphicsView):
     def flip_image(self):
         self._is_flip = not self._is_flip
 
-        if self._use_tiles and self._pixmap_tiles:
-            rect: QRectF = self._pixmap_tiles.boundingRect()
+        if self._use_tiles and self._framebuffer_tiles:
+            rect: QRectF = self._framebuffer_tiles.boundingRect()
             transform = self._flip_transform(rect)
 
-            self._pixmap_tiles.setTransform(transform, combine=True)
+            self._framebuffer_tiles.setTransform(transform, combine=True)
         else:
-            rect: QRectF = self._pixmap_item.boundingRect()
+            rect: QRectF = self._framebuffer_item.boundingRect()
             transform = self._flip_transform(rect)
-            self._pixmap_item.setTransform(transform, combine=True)
+            self._framebuffer_item.setTransform(transform, combine=True)
 
     @staticmethod
     def _flop_transform(rect: QRectF) -> QTransform:
@@ -900,22 +940,22 @@ class NandeViewer(QGraphicsView):
     def flop_image(self):
         self._is_flop = not self._is_flop
 
-        if self._use_tiles and self._pixmap_tiles:
-            rect: QRectF = self._pixmap_tiles.boundingRect()
+        if self._use_tiles and self._framebuffer_tiles:
+            rect: QRectF = self._framebuffer_tiles.boundingRect()
             transform = self._flop_transform(rect)
-            self._pixmap_tiles.setTransform(transform, combine=True)
+            self._framebuffer_tiles.setTransform(transform, combine=True)
         else:
-            rect: QRectF = self._pixmap_item.boundingRect()
+            rect: QRectF = self._framebuffer_item.boundingRect()
             transform = self._flop_transform(rect)
-            self._pixmap_item.setTransform(transform, combine=True)
+            self._framebuffer_item.setTransform(transform, combine=True)
 
     def _recalculate_scene_zoom(self):
-        if self._use_tiles and self._pixmap_tiles:
-            pix_width = self._pixmap_tiles.boundingRect().width()
-            pix_height = self._pixmap_tiles.boundingRect().width()
+        if self._use_tiles and self._framebuffer_tiles:
+            pix_width = self._framebuffer_tiles.boundingRect().width()
+            pix_height = self._framebuffer_tiles.boundingRect().width()
         else:
-            pix_width = self._pixmap_item.pixmap().width()
-            pix_height = self._pixmap_item.pixmap().height()
+            pix_width = self._framebuffer_item.pixmap().width()
+            pix_height = self._framebuffer_item.pixmap().height()
 
         x = - self.size().width() / 2 + (pix_width / 2)
         y = - self.size().height() / 2 + (pix_height / 2)
