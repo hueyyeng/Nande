@@ -19,6 +19,7 @@ from nande.utils import (
     get_luminance,
     get_pixmap_from_ndarray,
     measure_time,
+    ocio_transform,
 )
 
 VALID_FORMATS = (
@@ -100,6 +101,9 @@ class NandeViewToolbar(QWidget):
         layout = QHBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
+        self.use_ocio_checkbox = QCheckBox("Use OCIO (ACES 1.0 - SDR Video)")
+        self.use_ocio_checkbox.toggled.connect(self._toggled_use_ocio)
+
         self.fit_view_btn = NandeButton("Fit to View")
         self.fit_view_btn.clicked.connect(self.parent_.fit_scene_to_image)
 
@@ -127,6 +131,7 @@ class NandeViewToolbar(QWidget):
         self.flop_btn = NandeButton("Flop")
         self.flop_btn.clicked.connect(self.parent_.flop_image)
 
+        layout.addWidget(self.use_ocio_checkbox)
         layout.addWidget(self.fit_view_btn)
         layout.addWidget(self.zoom_actual_btn)
         layout.addWidget(self.zoom_half_btn)
@@ -137,6 +142,9 @@ class NandeViewToolbar(QWidget):
         layout.addWidget(self.rotate_180_btn)
         layout.addWidget(self.flip_btn)
         layout.addWidget(self.flop_btn)
+
+    def _toggled_use_ocio(self):
+        self.parent_._use_ocio = self.use_ocio_checkbox.isChecked()
 
 
 class NandeSettingsToolbar(QWidget):
@@ -390,6 +398,7 @@ class NandeViewer(QGraphicsView):
         self.zoom_level: float | None = None
         self._zoom_factor: float | None = None
 
+        self._use_ocio: bool = False
         self._is_inverted: bool = False
         self._is_flip: bool = False
         self._is_flop: bool = False
@@ -649,7 +658,10 @@ class NandeViewer(QGraphicsView):
         # TODO: Use QImageReader to construct pixmap tiles from very high res image
         # image = QImageReader(file_path)
         self._original_image = self._read_convert_image(file_path)
-        pixmap = self._original_framebuffer = QPixmap(file_path)
+        self._original_framebuffer = QPixmap(file_path)
+
+        img = self._original_image.astype(BitDepth.STD)
+        pixmap = self._get_pixmap_from_ndarray(img)
 
         self._clear_tiles()
         if self._use_tiles:
@@ -675,9 +687,19 @@ class NandeViewer(QGraphicsView):
         self._original_framebuffer = pixmap
         self._framebuffer_item.setPixmap(pixmap)
 
+    def _get_pixmap_from_ndarray(self,image: np.ndarray, disable_ocio=False, *args, **kwargs):
+        if not disable_ocio and self._use_ocio:
+            image = measure_time(ocio_transform, image)
+
+        return get_pixmap_from_ndarray(image, *args, **kwargs)
+
     def view_channel(self, idx: int | None):
         if idx is None:
-            self._framebuffer_item.setPixmap(self._original_framebuffer)
+            pixmap = self._original_framebuffer
+            if self._use_ocio:
+                pixmap = self._get_pixmap_from_ndarray(self._original_image)
+
+            self._framebuffer_item.setPixmap(pixmap)
             return
 
         if idx == ChannelEnum.LUMINANCE:
@@ -688,18 +710,18 @@ class NandeViewer(QGraphicsView):
         if ch is None:
             return
 
-        pixmap = get_pixmap_from_ndarray(ch, image_format=QImage.Format.Format_RGBA8888)
+        pixmap = self._get_pixmap_from_ndarray(ch, disable_ocio=True)
         self._framebuffer_item.setPixmap(pixmap)
 
     def view_luminance(self):
         lu = get_luminance(self._original_image)
-        pixmap = get_pixmap_from_ndarray(lu, image_format=QImage.Format.Format_RGBA8888)
+        pixmap = self._get_pixmap_from_ndarray(lu, disable_ocio=True)
         self._framebuffer_item.setPixmap(pixmap)
 
     def view_invert_color(self):
         self._is_inverted = not self._is_inverted
         if not self._is_inverted:
-            self._framebuffer_item.setPixmap(self._original_framebuffer)
+            self.view_channel(None)
             return
 
         ic = measure_time(get_invert_color, self._original_image)
@@ -709,13 +731,13 @@ class NandeViewer(QGraphicsView):
             if channels > 3:
                 image_format = QImage.Format.Format_RGBA8888_Premultiplied
 
-        pixmap = get_pixmap_from_ndarray(ic, image_format=image_format)
+        pixmap = self._get_pixmap_from_ndarray(ic, image_format=image_format)
         self._framebuffer_item.setPixmap(pixmap)
 
     def view_invert_linear_color(self):
         self._is_inverted = not self._is_inverted
         if not self._is_inverted:
-            self._framebuffer_item.setPixmap(self._original_framebuffer)
+            self.view_channel(None)
             return
 
         ic = measure_time(get_invert_linear_color, self._original_image)
@@ -725,7 +747,7 @@ class NandeViewer(QGraphicsView):
             if channels > 3:
                 image_format = QImage.Format.Format_RGBA8888_Premultiplied
 
-        pixmap = get_pixmap_from_ndarray(ic, image_format=image_format)
+        pixmap = self._get_pixmap_from_ndarray(ic, image_format=image_format)
         self._framebuffer_item.setPixmap(pixmap)
 
     def _set_viewer_zoom(self, value: float, sensitivity: float = None, pos: QPoint = None):

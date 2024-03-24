@@ -1,4 +1,5 @@
 import sys
+from functools import partial
 
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -61,7 +62,58 @@ class Window(QWidget):
         main_layout.addWidget(self.viewer)
         main_layout.addWidget(settings_toolbar)
 
+        self._install_shortcuts()
+
         QTimer.singleShot(10, self.viewer.fit_scene_to_image)
+
+    def _install_shortcuts(self):
+        """
+        Setup supported keyboard shortcuts.
+        """
+        # R,G,B,A = view channel
+        # C = view color
+        # TODO: Need to rewrite this as quick copy paste code and tweak from
+        #  https://github.com/AcademySoftwareFoundation/OpenColorIO/tree/main/src/apps/pyociodisplay
+        for i, key in enumerate(("R", "G", "B", "A")):
+            channel_shortcut = QShortcut(
+                QKeySequence(key),
+                self
+            )
+            channel_shortcut.activated.connect(
+                partial(self.viewer.view_channel, idx=i)
+            )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("C"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            partial(self.viewer.view_channel, idx=None)
+        )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("L"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            partial(self.viewer.view_channel, idx=100)
+        )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("Shift+I"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            self.viewer.view_invert_linear_color,
+        )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("F"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            self.viewer.fit_scene_to_image,
+        )
 
     def show_popup_info(self, pos: QPointF):
         if self.viewer.RMB_state:
