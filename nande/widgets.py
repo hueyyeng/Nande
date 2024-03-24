@@ -10,7 +10,7 @@ from PySide6.QtGui import *
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import *
 
-from nande import BIT_DEPTH, BitDepth
+from nande import BIT_DEPTH, BitDepth, OCIO_CONFIG
 from nande.utils import (
     ChannelEnum,
     get_channel,
@@ -36,6 +36,48 @@ VALID_FORMATS = (
 )
 ZOOM_MIN = -0.95
 ZOOM_MAX = 2.0
+
+
+class OCIOViewsComboBox(QComboBox):
+    def __init__(self, parent: NandeViewToolbar):
+        super().__init__(parent)
+        self.parent_ = parent
+        try:
+            self.populate()
+        except Exception as e:
+            print(f"Woops unhandled exception! {e}")
+
+    def populate(self):
+        config = OCIO_CONFIG
+        default_display = config.getDefaultDisplay()
+        default_view = config.getDefaultView(default_display)
+        views = config.getActiveViews().split(",")
+        for view in views:
+            self.addItem(view.strip())
+
+        dv_idx: int = self.findText(default_view)
+        self.setCurrentIndex(dv_idx)
+
+
+class OCIODisplaysComboBox(QComboBox):
+    def __init__(self, parent: NandeViewToolbar):
+        super().__init__(parent)
+        self.parent_ = parent
+        try:
+            self.populate()
+        except Exception as e:
+            print(f"Woops unhandled exception! {e}")
+
+    def populate(self):
+        config = OCIO_CONFIG
+        displays = config.getDisplays()
+        default_display = config.getDefaultDisplay()
+        for display in displays:
+            display: str
+            self.addItem(display)
+
+        dd_idx: int = self.findText(default_display)
+        self.setCurrentIndex(dd_idx)
 
 
 class NandeButton(QPushButton):
@@ -101,8 +143,14 @@ class NandeViewToolbar(QWidget):
         layout = QHBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self.use_ocio_checkbox = QCheckBox("Use OCIO (ACES 1.0 - SDR Video)")
+        self.use_ocio_checkbox = QCheckBox("Use OCIO")
         self.use_ocio_checkbox.toggled.connect(self._toggled_use_ocio)
+
+        self.ocio_views_combobox = OCIOViewsComboBox(self)
+        self.ocio_views_combobox.currentIndexChanged.connect(self._ocio_view_changed)
+
+        self.ocio_displays_combobox = OCIODisplaysComboBox(self)
+        self.ocio_displays_combobox.currentIndexChanged.connect(self._ocio_display_changed)
 
         self.fit_view_btn = NandeButton("Fit to View")
         self.fit_view_btn.clicked.connect(self.parent_.fit_scene_to_image)
@@ -132,6 +180,8 @@ class NandeViewToolbar(QWidget):
         self.flop_btn.clicked.connect(self.parent_.flop_image)
 
         layout.addWidget(self.use_ocio_checkbox)
+        layout.addWidget(self.ocio_displays_combobox)
+        layout.addWidget(self.ocio_views_combobox)
         layout.addWidget(self.fit_view_btn)
         layout.addWidget(self.zoom_actual_btn)
         layout.addWidget(self.zoom_half_btn)
@@ -142,6 +192,18 @@ class NandeViewToolbar(QWidget):
         layout.addWidget(self.rotate_180_btn)
         layout.addWidget(self.flip_btn)
         layout.addWidget(self.flop_btn)
+
+        self._post_init()
+
+    def _post_init(self):
+        self._ocio_display_changed()
+        self._ocio_view_changed()
+
+    def _ocio_display_changed(self):
+        self.parent_.ocio_display = self.ocio_displays_combobox.currentText()
+
+    def _ocio_view_changed(self):
+        self.parent_.ocio_view = self.ocio_views_combobox.currentText()
 
     def _toggled_use_ocio(self):
         self.parent_._use_ocio = self.use_ocio_checkbox.isChecked()
@@ -398,6 +460,8 @@ class NandeViewer(QGraphicsView):
         self.zoom_level: float | None = None
         self._zoom_factor: float | None = None
 
+        self.ocio_display: str | None = None
+        self.ocio_view: str | None = None
         self._use_ocio: bool = False
         self._is_inverted: bool = False
         self._is_flip: bool = False
@@ -689,7 +753,12 @@ class NandeViewer(QGraphicsView):
 
     def _get_pixmap_from_ndarray(self,image: np.ndarray, disable_ocio=False, *args, **kwargs):
         if not disable_ocio and self._use_ocio:
-            image = measure_time(ocio_transform, image)
+            image = measure_time(
+                ocio_transform,
+                image,
+                view=self.ocio_view,
+                display=self.ocio_display,
+            )
 
         return get_pixmap_from_ndarray(image, *args, **kwargs)
 

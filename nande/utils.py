@@ -6,7 +6,7 @@ import numpy as np
 import PyOpenColorIO as OCIO
 from PySide6.QtGui import QImage, QPixmap
 
-from nande import BIT_DEPTH, BitDepth
+from nande import BIT_DEPTH, BitDepth, OCIO_CONFIG
 
 
 def measure_time(func: Callable, *args, **kwargs):
@@ -144,21 +144,24 @@ def get_invert_linear_color(image: np.ndarray) -> np.ndarray:
     return img
 
 
-def ocio_transform(image: np.ndarray, dst_space: str | None = None) -> np.ndarray:
+def ocio_transform(
+        image: np.ndarray,
+        view: str | None = None,
+        display: str | None = None,
+) -> np.ndarray:
     # TODO: This will get complicated real quick but consider digesting this code 
     #  to figure out a way to implement OpenGL LUT from here: 
     #  https://github.com/AcademySoftwareFoundation/OpenColorIO/tree/main/src/apps/pyociodisplay
-    
-    # FIXME: For now leave this hardcode. Need to allow user to specify their config
-    config: OCIO.Config = OCIO.Config.CreateFromFile("ocio://default")
-    
-    # Lookup the display ColorSpace
-    display = config.getDefaultDisplay()
-    if dst_space:
-        view = dst_space
-    else:
+
+    config = OCIO_CONFIG
+
+    if display is None:
+        display = config.getDefaultDisplay()
+
+    if view is None:
         view = config.getDefaultView(display)
 
+    # TODO: Implement optional roles for setSrc?
     # FIXME: Another hardcode for src color space. Maybe leaving it linear works??
     transform = OCIO.DisplayViewTransform()
     transform.setSrc(OCIO.ROLE_SCENE_LINEAR)
