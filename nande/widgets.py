@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+from functools import partial
 
 import cv2
 import numpy
 import numpy as np
+import qimage2ndarray
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -496,6 +498,8 @@ class NandeViewer(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
+        self._install_shortcuts()
+
         # TODO: Need to study the docs on the update/cache/optimization blah
         # self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         # self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
@@ -511,6 +515,55 @@ class NandeViewer(QGraphicsView):
         )
         timer.setTimerType(Qt.TimerType.PreciseTimer)
         timer.start()
+
+    def _install_shortcuts(self):
+        """
+        Setup supported keyboard shortcuts.
+        """
+        # R,G,B,A = view channel
+        # C = view color
+        # TODO: Need to rewrite this as quick copy paste code and tweak from
+        #  https://github.com/AcademySoftwareFoundation/OpenColorIO/tree/main/src/apps/pyociodisplay
+        for i, key in enumerate(("R", "G", "B", "A")):
+            channel_shortcut = QShortcut(
+                QKeySequence(key),
+                self
+            )
+            channel_shortcut.activated.connect(
+                partial(self.view_channel, idx=i)
+            )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("C"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            partial(self.view_channel, idx=None)
+        )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("L"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            partial(self.view_channel, idx=100)
+        )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("Shift+I"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            self.view_invert_linear_color,
+        )
+
+        channel_shortcut = QShortcut(
+            QKeySequence("F"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            self.fit_scene_to_image,
+        )
 
     def _fps_timeout(self):
         if not self._show_fps:
@@ -748,6 +801,16 @@ class NandeViewer(QGraphicsView):
         self.fit_scene_to_image()
 
     def set_pixmap(self, pixmap: QPixmap):
+        img: QImage = pixmap.toImage()
+        # TODO: Hmm need to handle alpha channel? For now happy flow with rgb_view...
+        raw: np.ndarray = qimage2ndarray.rgb_view(img)
+        raw = cv2.cvtColor(raw, cv2.COLOR_RGB2BGR)
+        channels = cv2.split(raw)
+        channels = [
+            channel.astype(BitDepth.FLOAT) for channel in channels
+        ]
+        self._original_image = cv2.merge(channels)
+
         self._original_framebuffer = pixmap
         self._framebuffer_item.setPixmap(pixmap)
 
