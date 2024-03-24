@@ -6,7 +6,7 @@ import numpy as np
 import PyOpenColorIO as OCIO
 from PySide6.QtGui import QImage, QPixmap
 
-from nande import BIT_DEPTH, BitDepth, OCIO_CONFIG
+from nande import BitDepth, OCIO_CONFIG
 
 
 def measure_time(func: Callable, *args, **kwargs):
@@ -93,54 +93,90 @@ def get_channel(image: np.ndarray, channel: int) -> np.ndarray:
     return channel_
 
 
+# TODO: Hmm need to try out numba jit with pyinstaller. If it works, need to do
+#  some magic to get the function to run somewhere during init to compile it
+# @jit(nopython=True, parallel=True)
+def _get_rec709_luminance(
+        b: np.ndarray,
+        g: np.ndarray,
+        r: np.ndarray,
+) -> np.ndarray:
+    bb = b ** 2.2 * 0.0722
+    gg = g ** 2.2 * 0.7152
+    rr = r ** 2.2 * 0.2126
+
+    ll = bb + gg + rr
+    ll = np.power(ll, 1.0 / 2.2)
+    ll = (ll * 255).astype(np.uint8)
+    return ll
+
+
 def get_luminance(image: np.ndarray) -> np.ndarray:
     h, w, channels = image.shape[:3]
     image = image / 255.0
 
     if channels == 4:
         b, g, r, aa = cv2.split(image)
+        aa = aa.astype(BitDepth.STD)
     else:
         b, g, r = cv2.split(image)
-        aa: np.ndarray = np.ones((h, w), dtype=BIT_DEPTH)
-        if BIT_DEPTH == BitDepth.STD:
-            aa = aa * 255
-        else:
-            aa = aa * 1.0
+        aa: np.ndarray = np.ones((h, w)).astype(BitDepth.STD) * 255
 
     r: np.ndarray
     g: np.ndarray
     b: np.ndarray
     a: np.ndarray
 
-    bb = b ** 2.2 * 0.0722
-    gg = g ** 2.2 * 0.7152
-    rr = r ** 2.2 * 0.2126
-
-    ll = bb + gg + rr
-    ll = adjust_gamma(ll, 2.2)
-
+    ll = _get_rec709_luminance(b, g, r)
     img = cv2.merge([ll, ll, ll, aa])
-    img = (img * 255).astype(BitDepth.STD)
 
     return img
 
 
 def adjust_gamma(image: np.ndarray, gamma: float = 1.0):
-    img = np.power(image, 1.0 / gamma)
+    img: np.ndarray = np.power(image, 1.0 / gamma)
+    img = img.astype(np.float32)
     return img
 
 
 def get_invert_color(image: np.ndarray) -> np.ndarray:
-    img = 1.0 - image / 255.0
+    img = image.astype(BitDepth.STD)
+    img = cv2.bitwise_not(img)
+    return img
+
+
+# TODO: Consider removing this in the future... for now leave it be as
+#  this deals with values in float32
+def _get_invert_linear_color(image: np.ndarray) -> np.ndarray:
+    img = image / 255.0
+    img = 1 - np.power(img, 2.2)  # Invert the values of sRGB gamma removed
+    img = np.power(img, 1.0 / 2.2)  # Apply back the inverse sRGB gamma
     img = (img * 255).astype(BitDepth.STD)
     return img
 
 
 def get_invert_linear_color(image: np.ndarray) -> np.ndarray:
-    img = image / 255.0
-    img = 1 - np.power(img, 2.2)  # Invert the values of sRGB gamma removed
-    img = np.power(img, 1.0 / 2.2)  # Apply back the inverse sRGB gamma
-    img = (img * 255).astype(BitDepth.STD)
+    img = image.astype(BitDepth.STD)
+    inv_gamma = 1.0 / 2.2
+    inv_table = np.array(
+        [
+            ((i / 255.0) ** inv_gamma) * 255
+            for i in np.arange(0, 256)
+        ]
+    ).astype(BitDepth.STD)
+
+    gamma = 2.2
+    table = np.array(
+        [
+            ((i / 255.0) ** gamma) * 255
+            for i in np.arange(0, 256)
+        ]
+    ).astype(BitDepth.STD)
+
+    # apply gamma correction using the lookup table
+    img = cv2.LUT(img, table)
+    img = cv2.bitwise_not(img)
+    img = cv2.LUT(img, inv_table)
     return img
 
 
