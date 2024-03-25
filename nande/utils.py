@@ -2,9 +2,11 @@ import time
 from typing import Callable
 
 import cv2
+import numba
 import numpy as np
 import PyOpenColorIO as OCIO
 from PySide6.QtGui import QImage, QPixmap
+from numba import jit
 
 from nande import BitDepth, OCIO_CONFIG
 
@@ -13,9 +15,7 @@ def measure_time(func: Callable, *args, **kwargs):
     start_time = time.perf_counter()
     result = func(*args, **kwargs)
     end_time = time.perf_counter()
-    print(
-        f"{func.__name__} took {end_time - start_time:0.4f} secs"
-    )
+    print(f"{func.__name__} took {end_time - start_time:0.4f} secs")
     return result
 
 
@@ -93,41 +93,68 @@ def get_channel(image: np.ndarray, channel: int) -> np.ndarray:
     return channel_
 
 
-# TODO: Hmm need to try out numba jit with pyinstaller. If it works, need to do
-#  some magic to get the function to run somewhere during init to compile it
-# @jit(nopython=True, parallel=True)
+@jit(
+    numba.uint8[:, :](numba.float32[:, :], numba.float32[:, :], numba.float32[:, :]),
+    nopython=True,
+    parallel=True,
+    fastmath=True,
+)
 def _get_rec709_luminance(
         b: np.ndarray,
         g: np.ndarray,
         r: np.ndarray,
 ) -> np.ndarray:
-    bb = b ** 2.2 * 0.0722
-    gg = g ** 2.2 * 0.7152
-    rr = r ** 2.2 * 0.2126
+    # TODO: Maybe consider removing this...
+    b_factor = 0.0722 / 255.0 ** 2.2
+    g_factor = 0.7152 / 255.0 ** 2.2
+    r_factor = 0.2126 / 255.0 ** 2.2
+
+    bb = b ** 2.2 * b_factor
+    gg = g ** 2.2 * g_factor
+    rr = r ** 2.2 * r_factor
 
     ll = bb + gg + rr
-    ll = np.power(ll, 1.0 / 2.2)
-    ll = (ll * 255).astype(np.uint8)
+    ll = np.power(ll, 1.0 / 2.2) * 255
+    ll = ll.astype(np.uint8)
+
     return ll
+
+
+@jit(
+    numba.uint8[:, :](numba.float32[:, :], numba.float32[:, :], numba.float32[:, :]),
+    nopython=True,
+    parallel=True,
+    fastmath=True,
+)
+def _get_rec709_luma(
+        b: np.ndarray,
+        g: np.ndarray,
+        r: np.ndarray,
+):
+    luma = np.clip((0.2126 * r + 0.7152 * g + 0.0722 * b), 0, 255)
+
+    return luma.astype(np.uint8)
 
 
 def get_luminance(image: np.ndarray) -> np.ndarray:
     h, w, channels = image.shape[:3]
-    image = image / 255.0
 
+    aa: np.ndarray = np.ones((h, w), dtype=np.uint8) * 255
     if channels == 4:
         b, g, r, aa = cv2.split(image)
         aa = aa.astype(BitDepth.STD)
     else:
         b, g, r = cv2.split(image)
-        aa: np.ndarray = np.ones((h, w)).astype(BitDepth.STD) * 255
 
     r: np.ndarray
     g: np.ndarray
     b: np.ndarray
     a: np.ndarray
 
-    ll = _get_rec709_luminance(b, g, r)
+    # TODO: Average ~0.25 secs on 4000x3000 px image on i5 13th gen...
+    # ll = _get_rec709_luminance(b, g, r)
+    # TODO: Average ~0.17 secs on 4000x3000 px image on i5 13th gen...
+    ll = _get_rec709_luma(b, g, r)
     img = cv2.merge([ll, ll, ll, aa])
 
     return img
