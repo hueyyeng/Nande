@@ -131,12 +131,54 @@ def _get_rec709_luma(
         g: np.ndarray,
         r: np.ndarray,
 ):
-    luma = np.clip((0.2126 * r + 0.7152 * g + 0.0722 * b), 0, 255)
+    """
+    Y = 0.2125 R + 0.7154 G + 0.0721 B
+    """
+    luma = np.clip((0.2125 * r + 0.7152 * g + 0.0722 * b), 0, 255)
 
     return luma.astype(np.uint8)
 
 
-def get_luminance(image: np.ndarray) -> np.ndarray:
+@jit(
+    numba.uint8[:, :](numba.uint8[:, :], numba.uint8[:, :], numba.uint8[:, :]),
+    nopython=True,
+    parallel=True,
+    fastmath=True,
+)
+def _get_rec709_luma_fast_approx(
+        b: np.ndarray,
+        g: np.ndarray,
+        r: np.ndarray,
+):
+    """
+    https://stackoverflow.com/a/596241/8337847
+
+    Y = 0.33 R + 0.5 G + 0.16 B
+
+    Y = 0.375 R + 0.5 G + 0.125 B
+    """
+    ll = 0.33 * r + 0.5 * g + 0.16 * b
+
+    return ll.astype(np.uint8)
+
+
+def get_luminance(image: np.ndarray, fast_approx=True) -> np.ndarray:
+    # TODO: Hardcode this flow first and offer as accuracy precision blah blah settings
+    if fast_approx:
+        h, w, channels = image.shape[:3]
+        image = image.astype(np.uint8)
+        if channels == 4:
+            b, g, r, aa = cv2.split(image)
+        else:
+            b, g, r = cv2.split(image)
+            aa: np.ndarray = np.ones((h, w), dtype=np.uint8) * 255
+
+        # TODO: Average ~0.11 secs on 4000x3000 px image on i5 13th gen...
+        ll = _get_rec709_luma_fast_approx(b, g, r)
+        img = cv2.merge([ll, ll, ll, aa])
+
+        return img
+
     h, w, channels = image.shape[:3]
 
     aa: np.ndarray = np.ones((h, w), dtype=np.uint8) * 255
