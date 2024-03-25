@@ -154,20 +154,14 @@ class NandeViewToolbar(QWidget):
         self.ocio_displays_combobox = OCIODisplaysComboBox(self)
         self.ocio_displays_combobox.currentIndexChanged.connect(self._ocio_display_changed)
 
+        self.set_linear_filter_checkbox = QCheckBox("Linear Filter")
+        self.set_linear_filter_checkbox.toggled.connect(self._toggled_linear_filter)
+
         self.fit_view_btn = NandeButton("Fit to View")
         self.fit_view_btn.clicked.connect(self.parent_.fit_scene_to_image)
 
         self.zoom_actual_btn = NandeButton("Zoom Actual")
         self.zoom_actual_btn.clicked.connect(self.parent_.reset_scene_zoom)
-
-        self.zoom_half_btn = NandeButton("Zoom 50%")
-        self.zoom_half_btn.clicked.connect(lambda : self.parent_.set_zoom(0.5))
-
-        self.zoom_100_btn = NandeButton("Zoom 100%")
-        self.zoom_100_btn.clicked.connect(lambda: self.parent_.set_zoom(1.0))
-
-        self.zoom_200_btn = NandeButton("Zoom 200%")
-        self.zoom_200_btn.clicked.connect(lambda: self.parent_.set_zoom(2.0))
 
         self.rotate_90cw_btn = NandeButton("Rotate 90 Clockwise")
         self.rotate_90cw_btn.clicked.connect(lambda: self.parent_.rotate(90))
@@ -184,11 +178,9 @@ class NandeViewToolbar(QWidget):
         layout.addWidget(self.use_ocio_checkbox)
         layout.addWidget(self.ocio_displays_combobox)
         layout.addWidget(self.ocio_views_combobox)
+        layout.addWidget(self.set_linear_filter_checkbox)
         layout.addWidget(self.fit_view_btn)
         layout.addWidget(self.zoom_actual_btn)
-        layout.addWidget(self.zoom_half_btn)
-        layout.addWidget(self.zoom_100_btn)
-        layout.addWidget(self.zoom_200_btn)
         layout.addWidget(self.rotate_90cw_btn)
         layout.addWidget(self.rotate_90ccw_btn)
         layout.addWidget(self.rotate_180_btn)
@@ -209,6 +201,9 @@ class NandeViewToolbar(QWidget):
 
     def _toggled_use_ocio(self):
         self.parent_._use_ocio = self.use_ocio_checkbox.isChecked()
+
+    def _toggled_linear_filter(self):
+        self.parent_.use_linear_filter(self.set_linear_filter_checkbox.isChecked())
 
 
 class NandeSettingsToolbar(QWidget):
@@ -442,6 +437,20 @@ class NandeScene(QGraphicsScene):
         painter.restore()
 
 
+class NandePixmapItem(QGraphicsPixmapItem):
+    def __init__(self, use_linear_filter=True, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_linear_filter(use_linear_filter)
+
+    def set_linear_filter(self, use_linear: bool):
+        mode = (
+            Qt.TransformationMode.SmoothTransformation
+            if use_linear else
+            Qt.TransformationMode.FastTransformation
+        )
+        self.setTransformationMode(mode)
+
+
 class NandeViewer(QGraphicsView):
     img_clicked = Signal(QPointF)
     window_title_changed = Signal(str)
@@ -471,10 +480,11 @@ class NandeViewer(QGraphicsView):
         self._is_panning: bool = False
         self._is_opengl: bool = False
         self._show_fps: bool = False
+        self._use_linear_filter: bool = False
         self._use_tiles: bool = False
         self._drag_drop_image_enabled: bool = True
 
-        self._framebuffer_item = QGraphicsPixmapItem()
+        self._framebuffer_item = NandePixmapItem(self._use_linear_filter)
         self._framebuffer_tiles: QGraphicsItemGroup | None = None
         self._original_framebuffer: QPixmap = QPixmap()
         self._original_image: numpy.ndarray = np.zeros((1, 1), dtype=BIT_DEPTH)
@@ -565,6 +575,14 @@ class NandeViewer(QGraphicsView):
             self.fit_scene_to_image,
         )
 
+        channel_shortcut = QShortcut(
+            QKeySequence("N"),
+            self
+        )
+        channel_shortcut.activated.connect(
+            self._toggle_linear_filter,
+        )
+
     def _fps_timeout(self):
         if not self._show_fps:
             return
@@ -633,6 +651,14 @@ class NandeViewer(QGraphicsView):
         painter.setFont(font)
         painter.drawText(0, self.HUD_TEXT_FONT_SIZE * 2.5, viewport_mode)
         painter.restore()
+
+    def use_linear_filter(self, use_linear: bool):
+        self._use_linear_filter = use_linear
+        self._framebuffer_item.set_linear_filter(use_linear)
+
+    def _toggle_linear_filter(self):
+        self._use_linear_filter = not self._use_linear_filter
+        self._framebuffer_item.set_linear_filter(self._use_linear_filter)
 
     def use_opengl(self, confirm=True):
         if confirm:

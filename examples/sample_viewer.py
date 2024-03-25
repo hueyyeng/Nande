@@ -45,16 +45,6 @@ class Window(QWidget):
         settings_toolbar = NandeSettingsToolbar(self.viewer)
         img_adjustment_toolbar = NandeImageAdjustmentToolbar(self.viewer)
 
-        view_toolbar.zoom_half_btn.clicked.connect(
-            lambda: self.set_zoom_out(2)
-        )
-        view_toolbar.zoom_100_btn.clicked.connect(
-            lambda: self.set_zoom_in(0)
-        )
-        view_toolbar.zoom_200_btn.clicked.connect(
-            lambda: self.set_zoom_in(2)
-        )
-
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(view_toolbar)
         main_layout.addWidget(img_adjustment_toolbar)
